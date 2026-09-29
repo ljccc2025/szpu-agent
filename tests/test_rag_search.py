@@ -18,9 +18,9 @@ def _patch(monkeypatch, hits):
 
 def test_empty_result_returns_no_hallucination_text(monkeypatch):
     _patch(monkeypatch, [])
-    out = rag_search.search("量子力学")
-    assert out == rag_search.NO_RESULT_TEXT
-    assert rag_search.pop_last_sources() == []
+    text, sources = rag_search.search("量子力学")
+    assert text == rag_search.NO_RESULT_TEXT
+    assert sources == []
 
 
 def test_distance_threshold_filters(monkeypatch):
@@ -32,26 +32,31 @@ def test_distance_threshold_filters(monkeypatch):
         ],
     )
     monkeypatch.setattr(config, "RAG_MAX_DISTANCE", 0.6)
-    out = rag_search.search("nginx")
-    assert "相关内容" in out and "不相关内容" not in out
+    text, _ = rag_search.search("nginx")
+    assert "相关内容" in text and "不相关内容" not in text
 
 
 def test_all_filtered_is_no_result(monkeypatch):
     _patch(monkeypatch, [_hit("远", "a.pdf", 1, 0.99)])
     monkeypatch.setattr(config, "RAG_MAX_DISTANCE", 0.6)
-    assert rag_search.search("异次元") == rag_search.NO_RESULT_TEXT
+    text, sources = rag_search.search("异次元")
+    assert text == rag_search.NO_RESULT_TEXT
+    assert sources == []
 
 
-def test_output_format_and_sources_cache(monkeypatch):
+def test_output_format_and_sources_returned(monkeypatch):
     _patch(monkeypatch, [_hit("proxy_pass 指令说明" * 20, "第5章.pdf", 47, 0.20)])
-    out = rag_search.search("反向代理")
-    assert "[来源: 第5章.pdf 第47页]" in out
+    text, sources = rag_search.search("反向代理")
+    assert "[来源: 第5章.pdf 第47页]" in text
 
-    sources = rag_search.pop_last_sources()
     assert len(sources) == 1
     s = sources[0]
     assert s["source"] == "第5章.pdf" and s["page"] == 47
     assert len(s["excerpt"]) <= 80
     assert s["score"] == 0.8
-    # 取走后清空
-    assert rag_search.pop_last_sources() == []
+
+
+def test_no_module_level_source_cache():
+    """回归：出处不得再经模块级全局变量传递，否则并发会串号。"""
+    assert not hasattr(rag_search, "_last_sources")
+    assert not hasattr(rag_search, "pop_last_sources")

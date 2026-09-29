@@ -1,3 +1,5 @@
+import threading
+import time
 from types import SimpleNamespace
 
 from app import storage
@@ -70,8 +72,6 @@ def test_loop_limit_breaks(tmp_path):
 
 
 def test_rag_sources_collected(tmp_path, monkeypatch):
-    from app.tools import rag_search
-
     db = str(tmp_path / "t.db")
     fake = FakeLLM([
         _msg(tool_calls=[_tool_call("r1", "rag_search", '{"query": "nginx"}')]),
@@ -79,10 +79,9 @@ def test_rag_sources_collected(tmp_path, monkeypatch):
     ])
 
     def fake_dispatch(name, args):
-        rag_search._last_sources = [
+        return "检索结果", [
             {"source": "ch5.pdf", "page": 47, "excerpt": "x", "score": 0.9}
         ]
-        return "检索结果"
 
     agent = Agent(fake, db, dispatch=fake_dispatch)
     result = agent.chat("s1", "nginx 反向代理?")
@@ -90,3 +89,68 @@ def test_rag_sources_collected(tmp_path, monkeypatch):
     assert result["sources"] == [
         {"source": "ch5.pdf", "page": 47, "excerpt": "x", "score": 0.9}
     ]
+
+
+class BoomLLM:
+    """模拟重试耗尽后仍失败的 LLM 客户端。"""
+
+    def complete(self, messages, tools=None):
+        raise RuntimeError("API 502 Bad Gateway")
+
+
+def test_llm_failure_returns_friendly_reply(tmp_path):
+    """回归：LLM 失败不得把异常抛给调用方（规格 §5 要求提示服务繁忙）。"""
+    db = str(tmp_path / "t.db")
+    result = Agent(BoomLLM(), db).chat("s1", "我的问题")
+    assert "繁忙" in result["reply"]
+    assert result["sources"] == []
+
+
+def test_llm_failure_keeps_user_message(tmp_path):
+    """回归：LLM 失败时用户提问必须已落库（规格 §5 要求历史不丢失）。"""
+    db = str(tmp_path / "t.db")
+    Agent(BoomLLM(), db).chat("s1", "别把我弄丢了")
+    history = storage.get_history(db, "s1")
+    assert history[0] == {"role": "user", "content": "别把我弄丢了"}
+
+
+def test_user_message_saved_exactly_once(tmp_path):
+    db = str(tmp_path / "t.db")
+    Agent(FakeLLM([_msg("好的")]), db).chat("s1", "只说一次")
+    contents = [m["content"] for m in storage.get_history(db, "s1")]
+    assert contents.count("只说一次") == 1
+
+
+def test_concurrent_sessions_do_not_share_sources(tmp_path):
+    """回归：出处经模块级全局变量传递会导致并发会话串号。"""
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def run(tag, page):
+        def disp(name, args):
+            payload = [
+                {"source": tag + ".pdf", "page": page, "excerpt": tag, "score": 0.9}
+            ]
+            barrier.wait()
+            time.sleep(0.05)
+            return "检索结果", payload
+
+        fake = FakeLLM([
+            _msg(tool_calls=[_tool_call("c" + tag, "rag_search", '{"query": "q"}')]),
+            _msg("答案" + tag),
+        ])
+        db = str(tmp_path / (tag + ".db"))
+        agent = Agent(fake, db, dispatch=disp)
+        results[tag] = agent.chat("s-" + tag, "问题")["sources"]
+
+    threads = [
+        threading.Thread(target=run, args=("A", 1)),
+        threading.Thread(target=run, args=("B", 2)),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert results["A"][0]["source"] == "A.pdf"
+    assert results["B"][0]["source"] == "B.pdf"

@@ -153,3 +153,44 @@ def test_registered_in_registry():
     assert registry.HANDLERS["run_command"] is sandbox.run_command
     schema = next(t for t in registry.TOOLS if t["function"]["name"] == "run_command")
     assert "command" in schema["function"]["parameters"]["properties"]
+
+
+# ---------- 黑名单绕过回归 ----------
+
+@pytest.mark.parametrize("cmd", [
+    "rm --recursive --force /",
+    "rm --recursive /",
+    "rm --force -r /",
+    "find / -delete",
+    "find /etc -delete",
+    "shred /dev/sda",
+])
+def test_long_options_and_equivalents_blocked(cmd):
+    """回归：原黑名单只认 -x 短选项，长选项与等效命令可直接绕过。"""
+    assert sandbox.check_blocked(cmd) is not None
+
+
+@pytest.mark.parametrize("cmd", [
+    "ls --all /etc",
+    "find /etc -name '*.conf'",
+    "rm --force /tmp/a.txt",
+    "cat /etc/os-release",
+])
+def test_normal_long_option_commands_still_pass(cmd):
+    """加固不得误伤正常教学命令。"""
+    assert sandbox.check_blocked(cmd) is None
+
+
+# ---------- 容器加固回归 ----------
+
+def test_container_hardening_flags(monkeypatch):
+    """回归：容器此前以 root、可写根、全 capability 运行，且未限制 swap。"""
+    client = FakeClient(FakeContainer())
+    monkeypatch.setattr(sandbox, "_get_client", lambda: client)
+    sandbox.run("uname -a")
+    kw = client.run_kwargs
+    assert kw["user"] == "nobody"
+    assert kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"]
+    assert kw["security_opt"] == ["no-new-privileges"]
+    assert kw["memswap_limit"] == kw["mem_limit"]
