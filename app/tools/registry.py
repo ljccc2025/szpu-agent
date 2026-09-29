@@ -8,7 +8,7 @@ import datetime
 import json
 import operator
 
-from app.tools import grader, quiz, rag_search, sandbox
+from app.tools import grader, planner, quiz, rag_search, sandbox
 
 _OPS = {
     ast.Add: operator.add,
@@ -177,6 +177,27 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "make_study_plan",
+            "description": (
+                "根据学生错题本生成针对性复习计划：先统计做错最多的知识点，"
+                "再检索对应课程讲义，最后排出逐天的复习重点与练习建议。"
+                "学生要求复习计划、学习规划、不知道该复习什么时调用本工具；"
+                "错题本为空时会明确拒绝，不会编造计划"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "计划天数，默认 7，可选范围 1-30",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 HANDLERS = {
@@ -186,6 +207,7 @@ HANDLERS = {
     "run_command": sandbox.run_command,
     "generate_quiz": quiz.generate_quiz,
     "grade_answer": grader.grade_answer,
+    "make_study_plan": planner.make_study_plan,
 }
 
 
