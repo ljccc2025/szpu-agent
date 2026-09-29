@@ -1,0 +1,44 @@
+# M21 持续集成：每次 push / PR 自动跑全量测试与覆盖率门槛。
+#
+# 两个刻意的取舍：
+# 1) 不注入 DeepSeek API Key —— CI 不该消耗自费 API 额度，也不该因为上游
+#    服务抖动而变红。tests/test_quiz_real_api.py 的 2 个用例会继续 skip，
+#    这是预期行为而非疏漏。
+# 2) 先装 CPU-only torch —— sentence-transformers 默认会拉 CUDA 版 torch
+#    （约 2.5GB），换成 PyTorch 官方 CPU 索引后约 200MB，CI 才跑得动。
+#
+# Python 固定 3.11，与生产虚拟机（Rocky Linux 8.9 + Python 3.11.13）一致。
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: 安装 CPU 版 torch（避开 2.5GB 的 CUDA 包）
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: 安装项目依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: 跑测试与覆盖率门槛
+        run: python -m pytest --cov=app --cov-report=term-missing

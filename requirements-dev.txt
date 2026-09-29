@@ -1,0 +1,6 @@
+# M21 测试与质量保障依赖。运行依赖见 requirements.txt，二者分离后
+# M22 构建 Docker 镜像时只装运行依赖即可，不会把测试工具打进生产镜像。
+-r requirements.txt
+pytest>=9.1
+pytest-cov>=7.1
+httpx>=0.28

@@ -612,15 +612,29 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M21-Testing |
-| **物理文件路径** | `tests/`（test_storage/test_llm/test_core/test_tools/test_api.py） |
-| **核心职责** | 全模块单测+API 集成测试；FakeLLM/FakeSandbox 注入使测试零 API 成本、零 Docker 依赖 |
-| **对外API** | `pytest -v` 全绿 |
-| **内部技术** | pytest fixtures, tmp_path 临时库, monkeypatch 注入 |
-| **交互流程** | 每任务 TDD：红→绿→重构→commit |
+| **物理文件路径** | `tests/`（17 个测试文件）+ `pyproject.toml`（pytest/coverage 配置）+ `requirements-dev.txt` + `.github/workflows/ci.yml` |
+| **核心职责** | 全模块单测+API 集成测试；FakeLLM/FakeSandbox 注入使测试零 API 成本、零 Docker 依赖；覆盖率量化并设防倒退门槛；每次推送由 GitHub Actions 自动执行 |
+| **对外API** | `python -m pytest --cov=app` 全绿且覆盖率 ≥ `fail_under` |
+| **内部技术** | pytest fixtures, tmp_path 临时库, monkeypatch 注入, coverage 分支覆盖, GitHub Actions + pip 缓存 |
+| **交互流程** | 每任务 TDD：红→绿→重构→commit→push 触发 CI |
 
-**🔧 核心技术栈**: `pytest` 8.x、`httpx`
+**🔧 核心技术栈**: `pytest` 9.1、`pytest-cov` 7.1、`coverage` 7.16、`httpx`、GitHub Actions
 
 **🎯 推荐Skills**: `tdd_workflow` + `test_driven_development`（MCP 直用）、`verification-before-completion`（本地，交付前核验清单）
+
+> 实现说明（2026-09-29 落地）：
+>
+> **基线实测**：209 passed / 5 skipped，行覆盖 91%、分支覆盖 90%（810 条语句）。
+>
+> **门槛口径**：`fail_under = 85`，定位是「防倒退的地板」而非虚荣指标。本机与 CI 环境覆盖率不同（见下），取较低一侧再留缓冲，保证两处共用一个数字都不会误报。
+>
+> **5 个 skip 的成因已定位，并非疏漏**：`test_quiz_real_api.py` 的 2 个用例需要真实 DeepSeek API Key，CI 刻意不注入（不消耗自费额度，也不因上游抖动变红）；`test_vectorstore.py` 的 3 个用例在开发机因未装 chromadb 而跳过，**在 CI 中会真实执行**——这正是引入 CI 的实质价值：补上开发机永远测不到的向量库盲区。
+>
+> **覆盖率发现的真实缺陷**：`app/llm.py` 原覆盖率仅 72%，`complete()` 的指数退避重试逻辑从未被任何测试执行过——所有上层测试都注入 FakeLLM。补测后该模块达 100%，总覆盖率由 89% 升至 91%。
+>
+> **CI 依赖取舍**：`sentence-transformers` 默认拉 CUDA 版 torch 约 2.5GB，工作流改用 PyTorch 官方 CPU 索引（约 200MB）并启用 pip 缓存；Python 固定 3.11，与生产虚拟机（Rocky Linux 8.9 + Python 3.11.13）保持一致。
+>
+> **依赖分层**：`requirements.txt` 仅保留运行依赖（移出 `pytest`、`httpx`），测试依赖收敛到 `requirements-dev.txt`，M22 构建镜像时可直接只装前者。
 
 ---
 

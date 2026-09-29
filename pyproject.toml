@@ -1,0 +1,23 @@
+# M21 测试与质量保障配置（PEP 518）。
+# 此前项目没有任何 pytest / coverage 配置文件，两套配置在此收敛到一处。
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# 覆盖率刻意不写进 addopts：日常 pytest -k xxx 调试时不必每次都算覆盖率，
+# 需要时显式加 --cov=app（CI 里就是这么做的）。
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# 门槛是「防倒退的地板」，不是虚荣指标。
+# 2026-09-29 实测：本机行覆盖 91%、分支覆盖 90%；CI 装齐 chromadb 后预计约 93%。
+# 取较低一侧再留出缓冲，保证本地与 CI 共用同一个数字都不会误报。
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]

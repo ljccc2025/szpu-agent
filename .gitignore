@@ -13,3 +13,9 @@ upsync.txt
 pw_*.png
 # 助手/脚本运行期日志，避免被 git add -A 误提交
 *.agentlog
+
+# M21 覆盖率与 pytest 运行期产物
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
