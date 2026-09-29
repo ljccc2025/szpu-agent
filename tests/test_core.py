@@ -27,7 +27,7 @@ class FakeLLM:
 def test_plain_chat_saves_history(tmp_path):
     db = str(tmp_path / "t.db")
     agent = Agent(FakeLLM([_msg("你好呀")]), db)
-    assert agent.chat("s1", "你好") == "你好呀"
+    assert agent.chat("s1", "你好")["reply"] == "你好呀"
     assert storage.get_history(db, "s1") == [
         {"role": "user", "content": "你好"},
         {"role": "assistant", "content": "你好呀"},
@@ -52,7 +52,7 @@ def test_tool_call_roundtrip(tmp_path):
         _msg("等于 5"),
     ])
     agent = Agent(fake, db)
-    assert agent.chat("s1", "算一下 2+3") == "等于 5"
+    assert agent.chat("s1", "算一下 2+3")["reply"] == "等于 5"
     second_call = fake.seen[1]
     roles = [m["role"] for m in second_call]
     assert "tool" in roles
@@ -66,4 +66,27 @@ def test_loop_limit_breaks(tmp_path):
     endless = _msg(tool_calls=[_tool_call("x", "get_current_time", "{}")])
     agent = Agent(FakeLLM([endless] * 5), db)
     reply = agent.chat("s1", "疯狂调工具")
-    assert "上限" in reply
+    assert "上限" in reply["reply"]
+
+
+def test_rag_sources_collected(tmp_path, monkeypatch):
+    from app.tools import rag_search
+
+    db = str(tmp_path / "t.db")
+    fake = FakeLLM([
+        _msg(tool_calls=[_tool_call("r1", "rag_search", '{"query": "nginx"}')]),
+        _msg("答案带出处"),
+    ])
+
+    def fake_dispatch(name, args):
+        rag_search._last_sources = [
+            {"source": "ch5.pdf", "page": 47, "excerpt": "x", "score": 0.9}
+        ]
+        return "检索结果"
+
+    agent = Agent(fake, db, dispatch=fake_dispatch)
+    result = agent.chat("s1", "nginx 反向代理?")
+    assert result["reply"] == "答案带出处"
+    assert result["sources"] == [
+        {"source": "ch5.pdf", "page": 47, "excerpt": "x", "score": 0.9}
+    ]

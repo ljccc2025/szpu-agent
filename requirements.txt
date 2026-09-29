@@ -4,3 +4,8 @@ openai>=3.20
 python-dotenv>=1.2
 pytest>=9.1
 httpx>=0.28
+python-multipart>=0.0.20
+# --- M07-M10 RAG（2026-09 官方现行版）---
+chromadb>=1.5,<2
+sentence-transformers>=6.0,<7
+pypdf>=6.0,<7
