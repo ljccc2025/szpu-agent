@@ -267,6 +267,11 @@ td{padding:var(--s3);border-bottom:1px solid var(--border);vertical-align:top;li
 tr:last-child td{border:none;}
 td.num{font-family:"JetBrains Mono",Consolas,monospace;font-variant-numeric:tabular-nums;font-weight:700;}
 td.num.ok{color:var(--ok);} td.num.warn{color:var(--warn);} td.num.bad{color:var(--danger);}
+/* 窄列不换行：题号/得分/时间三列被挤成多行会破坏表格节奏 */
+th{white-space:nowrap;}
+td.num{white-space:nowrap;width:1%;}
+th:nth-child(2),td:nth-child(2){min-width:104px;}
+td:nth-child(4){width:100%;}
 
 .empty{text-align:center;color:var(--muted-fg);padding:var(--s6) var(--s4);font-size:13.5px;}
 .empty svg{margin:0 auto var(--s3);opacity:.45;}
