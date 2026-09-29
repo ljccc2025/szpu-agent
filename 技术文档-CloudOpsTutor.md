@@ -481,13 +481,19 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M14-StudyPlanner |
-| **物理文件路径** | `app/study/planner.py` |
-| **核心职责** | 聚合错题本→统计薄弱知识点 Top-N→生成 7 天针对性复习计划（每天知识点+练习建议）|
-| **对外API** | `make_plan(days=7) -> {weak_topics, daily_plan}` |
-| **内部技术** | SQL 聚合统计, 规划 Prompt 结合 RAG 补充资料出处 |
+| **物理文件路径** | `app/tools/planner.py`（与其余四个 Agent 工具同目录，不另建 `app/study/` 包） |
+| **核心职责** | 聚合错题本→统计薄弱知识点 Top-N→生成 N 天针对性复习计划（每天知识点+复习重点+练习建议）|
+| **对外API** | `make_plan(days=7, db_path=None, llm=None, top_n=5) -> {days, weak_topics, daily_plan, sources}` |
+| **内部技术** | **三段式**：① SQL 聚合出排名与分数（确定性，模型改不了）② 每个知识点做真实 RAG 检索取讲义出处（防幻觉）③ LLM 仅把前两者组织成自然语言计划。错题本为空直接拒绝生成，不编计划 |
 | **交互流程** | 用户请求"帮我做复习计划"→Agent 调用→统计→生成→返回 markdown 计划 |
 
-**🔧 核心技术栈**: `sqlite3`、`openai` 1.x
+**🔧 核心技术栈**: `sqlite3`（聚合查询在 `app/storage.py`）、`openai` SDK v3（3.20.x，JSON 模式+校验重试）、复用 M07 `rag_search.search`
+
+**🔌 REST 接口**: `POST /api/plan`（body `{"days": 7}`，1-30；错题本为空或模型不可用返回 422）
+
+**🖥️ 前端入口**: 练习页错题本卡片内「生成复习计划」按钮；对话内说"帮我做复习计划"触发 `make_study_plan` 工具
+
+**📊 排序口径**: 错题数 DESC → 平均分 ASC → 知识点名 ASC（三级兜底保证顺序确定可测）
 
 **🎯 推荐Skills**: `software-architecture`（本地）
 
