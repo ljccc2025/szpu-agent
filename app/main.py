@@ -80,6 +80,45 @@ def chat_stream(req: ChatRequest):
     )
 
 
+class PipelineRequest(BaseModel):
+    """M20 流水线请求：带 topic 走阶段一出题，带 quiz_id 走阶段二批改讲解。"""
+
+    topic: str | None = Field(default=None, max_length=100)
+    difficulty: str = Field(default="中等", max_length=10)
+    qtype: str = Field(default="单选题", max_length=10)
+    quiz_id: int | None = None
+    student_answer: str | None = Field(default=None, max_length=2000)
+
+
+@app.post("/api/pipeline/run")
+def pipeline_run(req: PipelineRequest):
+    """M20 多 Agent 批改流水线：三角色接力，全过程 SSE 推送。
+
+    阶段一（给 topic）：出题官；阶段二（给 quiz_id + student_answer）：
+    批改官 -> 讲解官。中间的学生作答由前端承接。
+    """
+    if req.quiz_id is None and not req.topic:
+        # 语义错误走 422，与全项目「领域错误不返回裸 500」的约定一致
+        raise HTTPException(
+            status_code=422,
+            detail="请提供 topic（出题阶段）或 quiz_id + student_answer（批改阶段）",
+        )
+    if req.quiz_id is not None and not req.student_answer:
+        raise HTTPException(status_code=422, detail="批改阶段必须提供 student_answer")
+
+    return StreamingResponse(
+        stream.pipeline_sse(
+            topic=req.topic,
+            difficulty=req.difficulty,
+            qtype=req.qtype,
+            quiz_id=req.quiz_id,
+            student_answer=req.student_answer,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/api/history/{session_id}")
 def history(session_id: str):
     return {

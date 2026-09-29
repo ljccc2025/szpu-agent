@@ -213,6 +213,23 @@ main{flex:1;min-height:0;display:flex;}
 .tool-chip.bad{color:var(--danger);border-color:var(--danger);}
 .tool-chip .spin{width:11px;height:11px;border-width:2px;}
 
+/* ---------- M20 多 Agent 流水线时间线 ---------- */
+.tl{position:relative;padding-left:26px;}
+.tl::before{content:"";position:absolute;left:9px;top:8px;bottom:8px;
+  width:2px;background:var(--border);}
+.tl-item{position:relative;margin-bottom:var(--s5);}
+.tl-item:last-child{margin-bottom:0;}
+.tl-item::before{content:"";position:absolute;left:-22px;top:5px;
+  width:12px;height:12px;border-radius:50%;background:var(--muted);
+  box-shadow:0 0 0 2px var(--border);transition:all var(--dur) var(--ease);}
+.tl-item.run::before{background:var(--accent);box-shadow:0 0 0 2px var(--accent);}
+.tl-item.ok::before{background:var(--ok);box-shadow:0 0 0 2px var(--ok);}
+.tl-role{display:flex;align-items:center;gap:var(--s2);font-weight:600;
+  font-size:13.5px;}
+.tl-item.wait .tl-role{color:var(--muted-fg);}
+.tl-body{margin-top:6px;font-size:13.5px;line-height:1.75;}
+.tl-body:empty{display:none;}
+
 /* ---------- 知识库 ---------- */
 .drop{border:1.5px dashed var(--border-strong);border-radius:var(--r3);
   padding:var(--s6) var(--s5);text-align:center;color:var(--muted-fg);font-size:13.5px;
@@ -414,7 +431,19 @@ td:nth-child(4){width:100%;}
           <div style="align-self:flex-end;">
             <button class="btn" id="gen">出一道题</button>
           </div>
+          <div style="align-self:flex-end;">
+            <button class="btn ghost" id="pipe">多 Agent 流水线</button>
+          </div>
         </div>
+      </div>
+
+      <div class="card" id="pipe-card" style="display:none">
+        <div class="card-h">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></svg>
+          <h2>多 Agent 流水线</h2>
+          <span class="chip brand">出题官 → 批改官 → 讲解官</span>
+        </div>
+        <div class="tl" id="pipe-timeline"></div>
       </div>
 
       <div class="card" id="quiz-card" style="display:none">
@@ -685,6 +714,117 @@ $("#ipt").addEventListener("input", e => {
 });
 
 /* ============ 知识库 ============ */
+/* ---- M20 多 Agent 流水线：三角色时间线 ---- */
+const PIPE_ROLES = [
+  { key: "quizmaster", name: "出题官" },
+  { key: "grader",     name: "批改官" },
+  { key: "explainer",  name: "讲解官" }
+];
+let pipeQuizId = null;
+
+function pipeReset(){
+  $("#pipe-card").style.display = "";
+  $("#pipe-timeline").innerHTML = PIPE_ROLES.map(r => `
+    <div class="tl-item wait" data-role="${r.key}">
+      <div class="tl-role">${r.name}<span class="chip">等待中</span></div>
+      <div class="tl-body"></div>
+    </div>`).join("");
+}
+function pipeMark(role, state, label){
+  const it = $(`.tl-item[data-role="${role}"]`);
+  if(!it) return null;
+  it.className = "tl-item " + state;
+  it.querySelector(".tl-role .chip").className =
+    "chip" + (state === "ok" ? " brand" : "");
+  it.querySelector(".tl-role .chip").textContent = label;
+  return it;
+}
+
+/** 跑一个阶段：复用 M15 的 readSSE 逐帧解析 */
+async function pipeRun(body){
+  const resp = await fetch("/api/pipeline/run", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if(!resp.ok || !resp.body){
+    const e = await resp.json().catch(() => ({}));
+    throw new Error(e.detail || ("HTTP " + resp.status));
+  }
+  await readSSE(resp.body, (ev, d) => {
+    if(ev === "agent_start"){
+      pipeMark(d.role, "run", "进行中…");
+      return;
+    }
+    if(ev === "error"){
+      PIPE_ROLES.forEach(r => {
+        const it = $(`.tl-item[data-role="${r.key}"]`);
+        if(it && it.classList.contains("run")) pipeMark(r.key, "wait", "已中断");
+      });
+      toast("流水线出错：" + d.message);
+      return;
+    }
+    if(ev !== "agent_output") return;
+
+    const box = pipeMark(d.role, "ok", "完成").querySelector(".tl-body");
+    if(d.role === "quizmaster"){
+      pipeQuizId = d.quiz_id;
+      box.innerHTML =
+        `<div style="margin-bottom:6px"><b>#${esc(d.quiz_id)}</b> ${md(d.question)}</div>` +
+        d.options.map((o, i) =>
+          `<div>${String.fromCharCode(65 + i)}. ${esc(o)}</div>`).join("") +
+        `<div class="row" style="margin-top:12px">
+           <input type="text" id="pipe-ans" placeholder="在此作答，例如 A">
+           <button class="btn sm" id="pipe-submit">交给批改官</button>
+         </div>
+         <div style="margin-top:6px;font-size:12px;color:var(--muted-fg)">
+           取材：${esc(d.source)}</div>`;
+    }else if(d.role === "grader"){
+      box.innerHTML =
+        `<div style="margin-bottom:4px"><b>${esc(d.score)}/100</b>
+           <span class="chip${d.passed ? " brand" : ""}">${d.passed ? "通过" : "未通过"}</span>
+           <span class="chip">正确答案 ${esc(d.correct_answer)}</span></div>` +
+        md(d.feedback);
+    }else{
+      box.innerHTML = md(d.explanation) + citeHTML(d.sources);
+    }
+  });
+}
+
+$("#pipe").addEventListener("click", async () => {
+  const btn = $("#pipe"); btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>流水线运行中';
+  pipeQuizId = null;
+  pipeReset();
+  try{
+    await pipeRun({
+      topic: $("#topic").value.trim() || "Nginx 反向代理",
+      difficulty: $("#diff").value,
+      qtype: $("#qtype").value
+    });
+  }catch(err){
+    toast("出题失败：" + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "多 Agent 流水线";
+  }
+});
+
+// 阶段二：学生作答后交给批改官 -> 讲解官（事件委托，元素是动态插入的）
+$("#pipe-timeline").addEventListener("click", async e => {
+  if(!e.target.closest("#pipe-submit")) return;
+  const ans = ($("#pipe-ans").value || "").trim();
+  if(!ans){ toast("请先作答"); return; }
+  const btn = $("#pipe-submit"); btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>批改中';
+  try{
+    await pipeRun({ quiz_id: pipeQuizId, student_answer: ans });
+    loadWb();
+  }catch(err){
+    toast("批改失败：" + err.message);
+  }finally{
+    if(btn.isConnected){ btn.disabled = false; btn.textContent = "交给批改官"; }
+  }
+});
+
 async function loadSources(){
   const box = $("#src-list");
   try{

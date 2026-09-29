@@ -22,3 +22,14 @@ def chat_sse(agent, session_id, message):
     """把 Agent.chat_stream 的事件流转成 SSE 帧流，供 StreamingResponse 消费。"""
     for event, payload in agent.chat_stream(session_id, message):
         yield sse_pack(event, payload)
+
+
+def pipeline_sse(**kwargs):
+    """把 M20 流水线的事件流转成 SSE 帧流。
+
+    编排逻辑在 app/pipeline.py，这里只负责成帧，两层职责不混。
+    """
+    from app import pipeline
+
+    for event, payload in pipeline.run(**kwargs):
+        yield sse_pack(event, payload)

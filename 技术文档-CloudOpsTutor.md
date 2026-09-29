@@ -595,15 +595,29 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M20-MultiAgentPipeline |
-| **物理文件路径** | `app/agents/pipeline.py` |
-| **核心职责** | 出题官→批改官→讲解官三角色接力：各自独立 system prompt，前者输出为后者输入，全过程 SSE 推送给前端可视化 |
-| **对外API** | `POST /api/pipeline/run`（SSE：event: agent_start/agent_output/done） |
-| **内部技术** | 三角色 Prompt 模板, 顺序编排, 过程事件流 |
+| **物理文件路径** | `app/pipeline.py`（编排 + 讲解官）+ `app/stream.py::pipeline_sse`（成帧） |
+| **核心职责** | 出题官→批改官→讲解官三角色接力，全过程 SSE 推送给前端时间线可视化。出题官复用 M12、批改官复用 M13，**讲解官为本模块新增** |
+| **对外API** | `POST /api/pipeline/run`（SSE：agent_start / agent_output / done / error），两阶段按参数分流 |
+| **内部技术** | 角色顺序编排, 过程事件流, 讲解官 RAG 取材, 领域异常透传 |
 | **交互流程** | 练习页触发→出题官出题→学生作答→批改官评分→讲解官补充讲解→前端时间线展示 |
 
 **🔧 核心技术栈**: `openai` 1.x、复用 M15 SSE
 
 **🎯 推荐Skills**: `subagent_driven_development`（MCP 直用——多智能体分工+两阶段审查思想直接映射）、`architect-review`（本地）
+
+> 实现说明（2026-09-29 落地）：
+>
+> **据实描述本模块的增量**：出题官直接调用 M12 `quiz.generate`，批改官直接调用 M13 `grader.grade`，二者均不重写——它们已含 RAG 取材、JSON 校验重试、选项洗牌、答案不进上下文、沙箱双跑等成套纪律，另写一份只会产生两套会漂移的逻辑。**M20 = 一层编排 + 一个新角色（讲解官）**，其价值在于把原本藏在后台的多角色协作变成看得见的过程，而非"实现了三个智能体"。
+>
+> **两阶段设计**：「出题 → **学生作答** → 批改」中间是人工暂停，接口不可能一条直线跑到底。带 `topic` 走阶段一（出题官），带 `quiz_id` + `student_answer` 走阶段二（批改官 → 讲解官），同一端点按参数分流；参数缺失返回语义 422 而非裸 500。
+>
+> **讲解官（唯一新增角色）**：拿批改结果里的 `topic` 做真实 RAG 检索，把「学生得分 + 批改点评 + 正确答案 + 讲义原文」一并交给 LLM，产出带出处的针对性讲解。**检索为空时如实降级并且完全不调用 LLM**——既守住防幻觉纪律（与 `rag_search` 空结果拒答、`quiz` 无资料拒绝出题、`planner` 空错题本拒绝生成同源），也省掉一次无意义的 API 开销。
+>
+> **答案防泄露**：阶段一的 `agent_output` 剥掉 `answer` 与 `explanation`，与 M12 `generate_quiz` 同一条纪律——否则前端按 F12 就能直接看到答案。已有专门的回归测试守住。
+>
+> **分层**：编排逻辑在 `app/pipeline.py`，SSE 成帧复用 `app/stream.py`，两层职责不混。文件放在 `app/` 而非新建 `app/agents/` 包，与 `core.py`/`stream.py` 同为编排层，遵循与 M14、M15 一致的就近原则。
+>
+> **实跑取证**：新增 12 个测试，全量 **221 passed / 5 skipped**，覆盖率 89.85%（门槛 85% 通过），`app/pipeline.py` 覆盖率 89%。
 
 ---
 
