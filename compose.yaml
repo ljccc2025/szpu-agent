@@ -1,0 +1,48 @@
+# M22 一键部署编排：docker compose up -d 拉起全套服务。
+#
+# ⚠️ 安全说明（务必与技术文档 M22 条目一起读）：
+# 下面挂载了 /var/run/docker.sock —— 这是 M11 沙箱在容器内启动子容器的唯一
+# 办法（Docker-outside-of-Docker）。代价是**容器内进程等价于宿主 root**：
+# 它能通过 Docker API 挂载宿主任意目录。这是本教学项目为保住「真实执行
+# Linux 命令」这一核心卖点而做的明确取舍，不适用于真实生产环境。
+#
+# 想关掉：把 volumes 里的 docker.sock 那行和 group_add 整段注释掉。沙箱工具
+# 会降级为不可用，其余功能（RAG 问答、出题、批改、学习规划）均不受影响。
+
+services:
+  tutor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cloudops-tutor:latest
+    container_name: cloudops-tutor
+    restart: unless-stopped
+
+    # 宿主 8001 -> 容器 8000：刻意避开宿主已在运行的 8000 服务，
+    # 新旧并行验证互不干扰；确认无误后再决定是否切回 8000。
+    ports:
+      - "8001:8000"
+
+    # API Key 等敏感配置运行时注入，绝不烘进镜像层
+    env_file:
+      - .env
+
+    volumes:
+      # 错题本(SQLite) + 向量库(Chroma) 持久化到宿主，镜像可随时重建而数据不丢
+      - ./data:/app/data
+      # 课程资料只读挂载，便于随时重新摄取
+      - ./course-materials:/app/course-materials:ro
+      # M11 沙箱所需，安全含义见文件顶部说明
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    # 宿主 docker 组 GID（本机实测为 987）。容器内以非 root 用户 app 运行，
+    # 靠这一行拿到 socket 读写权限。换主机时用 `getent group docker` 查后改这里。
+    group_add:
+      - "987"
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 3

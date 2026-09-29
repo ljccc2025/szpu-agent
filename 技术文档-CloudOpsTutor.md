@@ -643,15 +643,29 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M22-DeployDemo |
-| **物理文件路径** | `compose.yaml`、`Dockerfile`、`docs/演示脚本.md` |
+| **物理文件路径** | `Dockerfile`（多阶段）、`compose.yaml`、`.dockerignore`、`docs/演示脚本.md` |
 | **核心职责** | 一键 `docker compose up` 拉起；固定 6 步演示脚本（问答→追问→出题→答题→批改→复习计划）；演示数据预置 |
-| **对外API** | `docker compose up -d` |
-| **内部技术** | 多阶段构建镜像瘦身, healthcheck, 卷挂载持久化 data/ |
+| **对外API** | `docker compose up -d`，服务暴露在宿主 **8001**（避开宿主已运行的 8000） |
+| **内部技术** | 多阶段构建, 构建期烘焙嵌入模型, healthcheck, 卷挂载持久化 data/, 非 root 运行 + `group_add` 取得 docker socket 权限 |
 | **交互流程** | 答辩前 compose up→打开浏览器→照脚本走 |
 
 **🔧 核心技术栈**: Docker Compose v2、`docker-build-strategies` 多阶段构建
 
 **🎯 推荐Skills**: `docker-compose-patterns` + `docker-build-strategies`（✅ 新装已验证）、`chinese-documentation`（本地，演示文档）
+
+> 实现说明（2026-09-29 落地，镜像 **1.89GB**，构建耗时约 6 分钟）：
+>
+> **目标机实测约束（决定了实现方式）**：① `pypi.org` 不可达，`Dockerfile` 必须写死清华镜像源；② `python:3.11-slim` 已在本地缓存，构建刻意不拉新基础镜像；③ **不能写 `# syntax=docker/dockerfile:1`**——该指令会让 BuildKit 去 Docker Hub 拉前端镜像，国内网络下会卡死构建（已实测踩坑）；④ `sentence-transformers` 默认拉 2.5GB CUDA 版 torch，改用 PyTorch 官方 CPU 索引。
+>
+> **模型烘焙**：构建期经 `hf-mirror.com` 把 `BAAI/bge-small-zh-v1.5` 下进镜像，运行时零下载，答辩现场断网也能启动。
+>
+> **沙箱的 DooD 取舍**：容器内要启动沙箱子容器，唯一办法是挂载 `/var/run/docker.sock`。**代价是容器内进程等价于宿主 root**（可通过 Docker API 挂载宿主任意目录）。这是教学项目为保住「真实执行 Linux 命令」核心卖点的明确取舍，不适用于生产；生产应使用 gVisor / Kata 等真正的沙箱运行时。容器本身以非 root 用户 `app`(uid 1000) 运行，靠 compose 的 `group_add: ["987"]` 取得 socket 权限（987 为本机 docker 组 GID）。
+>
+> **部署踩坑记录**：宿主 `data/` 原属主为 root，容器以 uid 1000 运行导致 SQLite 报 `attempt to write a readonly database`。首次部署须执行 `chown -R 1000:1000 data`；root 身份的旧服务不受影响（root 绕过权限检查）。
+>
+> **端口策略**：容器映射 `8001:8000`，与宿主原有 uvicorn 服务并行运行，互不干扰。既便于灰度验证，也为答辩留了一条随时可切回的后路。
+>
+> **容器内实测取证**：healthcheck 转 healthy；RAG 问答返回 5 条真实出处（第5章-Nginx服务部署.md）；沙箱真实起子容器执行 `uname -a` 返回宿主内核信息且退出码 0；SSE 流式 143 帧（118 token + tool_start/tool_end/done）；全程宿主 8000 服务未受影响。
 
 ---
 
