@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "docker-build-strategies": {
+      "source": "docker/skills",
+      "sourceType": "github",
+      "skillPath": "skills/docker-build-strategies/SKILL.md",
+      "computedHash": "6b3d320e5672cae202222136cb89ae557474130f197e4f93542dbc490ece0034"
+    },
+    "docker-compose-patterns": {
+      "source": "docker/skills",
+      "sourceType": "github",
+      "skillPath": "skills/docker-compose-patterns/SKILL.md",
+      "computedHash": "622dbdbc5778183b6c59372f0c52fb9198bb72e1c9312b6c4ae602a3a3c39940"
+    },
+    "fastapi-python": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "fastapi-python/SKILL.md",
+      "computedHash": "4521c6090735152b7b8df670cefe5c1c6d1dcaa115de67bb96e74ebf802d4f24"
+    },
+    "rag-skills": {
+      "source": "Goodnight77/rag-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "61b67d2aef28653368975717d7fbee8bb66afba31be7dad80b8a98235d66208c"
+    }
+  }
+}
