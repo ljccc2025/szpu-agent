@@ -1,13 +1,13 @@
 """M07 RAG 检索工具：查询向量化 -> Top-K -> 距离阈值过滤 -> 带出处上下文。
 
 空结果时返回明确的防幻觉声明（技术文档 M07 要求）。
-同时缓存本轮结构化出处（source/page/excerpt/score），
-由 M05 核心循环取走并随 /api/chat 响应返回给前端出处卡。
+结构化出处（source/page/excerpt/score）随返回值一并交给调用方，
+由 M05 核心循环收集后随 /api/chat 响应返回给前端出处卡。
+注意：出处绝不能经模块级全局变量传递——同步路由跑在线程池里，
+并发请求会互相覆盖，导致会话之间出处串号。
 """
 from app import config
 from app.kb import embedder, vectorstore
-
-_last_sources = []
 
 NO_RESULT_TEXT = (
     "知识库中没有检索到与该问题相关的课程内容。"
@@ -16,24 +16,16 @@ NO_RESULT_TEXT = (
 )
 
 
-def pop_last_sources():
-    """取走并清空本轮出处缓存（core 循环在每次工具调用后立即调用）。"""
-    global _last_sources
-    out, _last_sources = _last_sources, []
-    return out
-
-
-def search(query: str) -> str:
-    global _last_sources
+def search(query: str):
+    """返回 (给 LLM 的文本, 结构化出处列表)。"""
     vector = embedder.encode([query])[0]
     hits = vectorstore.query(vector, k=config.RAG_TOP_K)
     kept = [h for h in hits if h["distance"] <= config.RAG_MAX_DISTANCE]
 
     if not kept:
-        _last_sources = []
-        return NO_RESULT_TEXT
+        return NO_RESULT_TEXT, []
 
-    _last_sources = [
+    sources = [
         {
             "source": h["meta"].get("source", "未知"),
             "page": h["meta"].get("page", 0),
@@ -46,7 +38,8 @@ def search(query: str) -> str:
         f"[来源: {h['meta'].get('source', '未知')} 第{h['meta'].get('page', '?')}页] {h['text']}"
         for h in kept
     ]
-    return (
+    text = (
         "以下是课程知识库中检索到的相关内容，回答时请注明出处（来源文件与页码）：\n\n"
         + "\n\n".join(blocks)
     )
+    return text, sources

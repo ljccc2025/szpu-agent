@@ -20,42 +20,44 @@ class Agent:
         history = storage.get_history(
             self.db_path, session_id, limit=config.HISTORY_LIMIT
         )
+        # 先落库用户提问：LLM 失败时也不能把学生刚打的问题弄丢（规格 §5）
+        storage.save_message(self.db_path, session_id, "user", user_message)
         messages = build_messages(config.SYSTEM_PROMPT, history, user_message)
         reply = "工具调用次数超过上限，请换个问法试试。"
         sources = []
-        for _ in range(config.MAX_TOOL_ROUNDS):
-            msg = self.llm.complete(messages, tools=self.tools or None)
-            tool_calls = getattr(msg, "tool_calls", None)
-            if not tool_calls:
-                reply = msg.content or ""
-                break
-            # 官方协议：assistant(tool_calls) -> role=tool 逐个回填
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": msg.content or "",
-                    "tool_calls": [
-                        {
-                            "id": c.id,
-                            "type": "function",
-                            "function": {
-                                "name": c.function.name,
-                                "arguments": c.function.arguments,
-                            },
-                        }
-                        for c in tool_calls
-                    ],
-                }
-            )
-            for call in tool_calls:
-                result = self.dispatch(call.function.name, call.function.arguments)
+        try:
+            for _ in range(config.MAX_TOOL_ROUNDS):
+                msg = self.llm.complete(messages, tools=self.tools or None)
+                tool_calls = getattr(msg, "tool_calls", None)
+                if not tool_calls:
+                    reply = msg.content or ""
+                    break
+                # 官方协议：assistant(tool_calls) -> role=tool 逐个回填
                 messages.append(
-                    {"role": "tool", "tool_call_id": call.id, "content": result}
+                    {
+                        "role": "assistant",
+                        "content": msg.content or "",
+                        "tool_calls": [
+                            {
+                                "id": c.id,
+                                "type": "function",
+                                "function": {
+                                    "name": c.function.name,
+                                    "arguments": c.function.arguments,
+                                },
+                            }
+                            for c in tool_calls
+                        ],
+                    }
                 )
-                if call.function.name == "rag_search":
-                    from app.tools import rag_search
-
-                    for s in rag_search.pop_last_sources():
+                for call in tool_calls:
+                    result, extra = self.dispatch(
+                        call.function.name, call.function.arguments
+                    )
+                    messages.append(
+                        {"role": "tool", "tool_call_id": call.id, "content": result}
+                    )
+                    for s in extra or []:
                         # 多轮检索可能命中同一知识块，按(来源,页码,摘录)去重
                         if not any(
                             s["source"] == x["source"]
@@ -64,6 +66,9 @@ class Agent:
                             for x in sources
                         ):
                             sources.append(s)
-        storage.save_message(self.db_path, session_id, "user", user_message)
+        except Exception:
+            # LLM 重试 2 次后仍失败：给友好提示，历史已保留（规格 §5）
+            reply = "服务暂时繁忙，请稍后再试。"
+            sources = []
         storage.save_message(self.db_path, session_id, "assistant", reply)
         return {"reply": reply, "sources": sources}
