@@ -10,6 +10,6 @@ __pycache__/
 chk.txt
 push.log
 upsync.txt
-pw_result.png
+pw_*.png
 # 助手/脚本运行期日志，避免被 git add -A 误提交
 *.agentlog
