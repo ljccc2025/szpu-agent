@@ -1,6 +1,13 @@
 .shuncode/
 .claude/
+.agents/
 .env
 data/
 __pycache__/
 .venv/
+
+# 本地临时产物
+chk.txt
+push.log
+upsync.txt
+pw_result.png
