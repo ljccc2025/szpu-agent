@@ -14,7 +14,7 @@ from app.core import Agent
 from app.kb import ingest as kb_ingest
 from app.kb import vectorstore
 from app.llm import LLMClient
-from app.tools import quiz
+from app.tools import grader, quiz
 
 
 @asynccontextmanager
@@ -39,6 +39,11 @@ class QuizRequest(BaseModel):
     qtype: str = "单选题"
     # False 时响应剥离答案与解析（审查修复项：练习页 F12 不可见答案）
     with_answer: bool = True
+
+
+class GradeRequest(BaseModel):
+    # max_length 与 grader.MAX_ANSWER_LEN 对齐，超长在入口就拒绝
+    student_answer: str = Field(min_length=1, max_length=500)
 
 
 @app.get("/api/health")
@@ -76,6 +81,30 @@ def quiz_generate(req: QuizRequest):
         result = {k: v for k, v in result.items()
                   if k not in ("answer", "explanation")}
     return result
+
+
+# --- M13 智能批改与错题本 ---
+
+
+@app.post("/api/quiz/{quiz_id}/grade")
+def quiz_grade(quiz_id: int, req: GradeRequest):
+    try:
+        return grader.grade(quiz_id, req.student_answer,
+                            db_path=agent.db_path)
+    except grader.GraderError as err:
+        # 题号不存在/答案为空/沙箱或模型不可用：语义化 422
+        raise HTTPException(status_code=422, detail=str(err))
+
+
+@app.get("/api/attempts")
+def attempts(only_wrong: bool = False):
+    """作答记录；only_wrong=true 时只返回错题（score < PASS_SCORE）。"""
+    return {
+        "attempts": storage.list_attempts(
+            agent.db_path,
+            max_score=grader.PASS_SCORE if only_wrong else None,
+        )
+    }
 
 
 # --- M08-M09 知识库管理 ---

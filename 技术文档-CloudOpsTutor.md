@@ -461,12 +461,16 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 |------|------|
 | **模块ID** | M13-Grader |
 | **物理文件路径** | `app/tools/grader.py` |
-| **核心职责** | 三种批改模式：选择题直接比对；简答题 LLM 评分+逐条点评；命令实操题先沙箱真实执行再对比预期输出 |
-| **对外API** | `grade(quiz_id, student_answer) -> {score, feedback, weak_points}` |
-| **内部技术** | 结构化评分 Prompt(0-100), 沙箱联动实测, 低分自动写错题本 |
+| **核心职责** | 两种批改模式（与 M12 题型严格对齐）：单选题确定性比对答案字母，不调 LLM；命令实操题把学生命令与参考命令都放进沙箱真实执行，再交 LLM 裁决效果等价性。简答题待 M12 支持该题型后再补 |
+| **对外API** | `grade(quiz_id, student_answer, llm=None, db_path=None, runner=None) -> {quiz_id, topic, qtype, score, passed, feedback, weak_points, correct_answer, explanation, source}` |
+| **内部技术** | JSON 模式评分 Prompt(0-100)+校验重试, 沙箱双跑联动, attempts 单表落库（错题 = score<60 的查询，不另建 wrong_questions 表） |
 | **交互流程** | 学生提交→查 quizzes 表→按题型分支→评分→attempts 落库→返回点评 |
 
-**🔧 核心技术栈**: `openai` 1.x、`sqlite3`、复用 M11 沙箱
+**🔧 核心技术栈**: `openai` SDK v3（3.20.x，JSON 模式）、`sqlite3`、复用 M11 沙箱 `run()`
+
+**🔌 REST 接口**: `POST /api/quiz/{quiz_id}/grade`（失败返回 422）、`GET /api/attempts?only_wrong=true`（错题本）
+
+**🛡️ 答案保护**: 标准答案只从 quizzes 表按 id 取，不经由对话上下文或前端流转
 
 **🎯 推荐Skills**: `test_driven_development`（MCP 直用）、`chinese_code_review`（点评话术分级参考：必须修复/建议/仅供参考）
 

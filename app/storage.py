@@ -30,6 +30,21 @@ def _conn(db_path):
         "source TEXT NOT NULL,"           # 取材的课件文件名（防幻觉溯源）
         "created_at TEXT DEFAULT (datetime('now','localtime')))"
     )
+    # M13 批改记录。单表设计：错题 = score < PASS_SCORE 的行，
+    # 不另建 wrong_questions 表，避免同一数据两处存储需维护一致性。
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attempts("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "quiz_id INTEGER NOT NULL,"
+        "topic TEXT NOT NULL,"
+        "qtype TEXT NOT NULL,"
+        "student_answer TEXT NOT NULL,"
+        "score INTEGER NOT NULL,"
+        "feedback TEXT NOT NULL,"
+        "weak_points TEXT NOT NULL,"      # JSON 数组文本
+        "created_at TEXT DEFAULT (datetime('now','localtime')),"
+        "FOREIGN KEY(quiz_id) REFERENCES quizzes(id))"
+    )
     return conn
 
 
@@ -79,3 +94,34 @@ def get_history(db_path, session_id, limit=20):
             (session_id, limit),
         ).fetchall()
     return [{"role": r, "content": t} for r, t in rows]
+
+
+def save_attempt(db_path, quiz_id, topic, qtype,
+                 student_answer, score, feedback, weak_points_json):
+    """保存一次作答记录（M13 批改），返回自增 attempt_id。"""
+    with closing(_conn(db_path)) as c, c:
+        cur = c.execute(
+            "INSERT INTO attempts(quiz_id, topic, qtype, student_answer,"
+            " score, feedback, weak_points) VALUES(?,?,?,?,?,?,?)",
+            (quiz_id, topic, qtype, student_answer,
+             score, feedback, weak_points_json),
+        )
+        return cur.lastrowid
+
+
+_ATTEMPT_COLS = ("id", "quiz_id", "topic", "qtype", "student_answer",
+                 "score", "feedback", "weak_points", "created_at")
+
+
+def list_attempts(db_path, limit=50, max_score=None):
+    """按时间倒序列出作答记录；max_score 非空时只返回低于该分数的（错题本）。"""
+    sql = f"SELECT {', '.join(_ATTEMPT_COLS)} FROM attempts"
+    params = []
+    if max_score is not None:
+        sql += " WHERE score < ?"
+        params.append(max_score)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    with closing(_conn(db_path)) as c:
+        rows = c.execute(sql, params).fetchall()
+    return [dict(zip(_ATTEMPT_COLS, r)) for r in rows]
