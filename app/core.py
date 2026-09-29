@@ -16,11 +16,13 @@ class Agent:
         self.dispatch = dispatch or registry.dispatch
 
     def chat(self, session_id, user_message):
+        """返回 {"reply": str, "sources": list}；sources 为 RAG 出处（M07）。"""
         history = storage.get_history(
             self.db_path, session_id, limit=config.HISTORY_LIMIT
         )
         messages = build_messages(config.SYSTEM_PROMPT, history, user_message)
         reply = "工具调用次数超过上限，请换个问法试试。"
+        sources = []
         for _ in range(config.MAX_TOOL_ROUNDS):
             msg = self.llm.complete(messages, tools=self.tools or None)
             tool_calls = getattr(msg, "tool_calls", None)
@@ -50,6 +52,10 @@ class Agent:
                 messages.append(
                     {"role": "tool", "tool_call_id": call.id, "content": result}
                 )
+                if call.function.name == "rag_search":
+                    from app.tools import rag_search
+
+                    sources.extend(rag_search.pop_last_sources())
         storage.save_message(self.db_path, session_id, "user", user_message)
         storage.save_message(self.db_path, session_id, "assistant", reply)
-        return reply
+        return {"reply": reply, "sources": sources}

@@ -8,6 +8,8 @@ import datetime
 import json
 import operator
 
+from app.tools import rag_search
+
 _OPS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
@@ -62,11 +64,33 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rag_search",
+            "description": (
+                "检索云计算运维课程知识库（课件/讲义/实验手册），"
+                "返回带出处的课程原文。学生询问课程知识点、概念、"
+                "命令用法、配置方法时应优先调用本工具"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "检索关键词或问题，用简洁中文描述",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 HANDLERS = {
     "calculator": calculator,
     "get_current_time": get_current_time,
+    "rag_search": rag_search.search,
 }
 
 

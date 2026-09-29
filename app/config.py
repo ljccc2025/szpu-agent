@@ -13,8 +13,18 @@ DB_PATH = os.getenv("DB_PATH", "data/tutor.db")
 MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "5"))
 HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "20"))
 
+# --- M07-M10 RAG 知识库 ---
+CHROMA_DIR = os.getenv("CHROMA_DIR", "data/chroma")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-zh-v1.5")
+RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
+# cosine 距离阈值：小于该值视为相关（技术文档 M07: distance<0.6）
+RAG_MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", "0.6"))
+
 SYSTEM_PROMPT = (
     "你是 CloudOps Tutor，一名云计算运维课程的智能助教。"
     "面向高职学生，回答准确、简洁、循序渐进；涉及命令时给出示例并解释参数。"
-    "当需要计算或查询当前时间时，使用提供的工具。"
+    "当学生询问课程知识点、概念或配置方法时，优先调用 rag_search 检索课程知识库，"
+    "并在回答中注明出处（来源文件与页码）；若检索不到相关内容，必须如实说明"
+    "该问题超出课程资料范围，严禁编造出处。"
+    "当需要计算或查询当前时间时，使用对应工具。"
 )
