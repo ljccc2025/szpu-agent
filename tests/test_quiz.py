@@ -104,7 +104,10 @@ def test_generate_refuses_without_material(monkeypatch, db):
 def test_generate_success_and_persist(kb, db):
     llm = FakeLLM([json.dumps(GOOD_CHOICE, ensure_ascii=False)])
     q = quiz.generate("nginx 反向代理", llm=llm, db_path=db)
-    assert q["answer"] == "A"  # 小写归一化
+    # 洗牌后答案字母可能变化，但不变量是：答案字母指向的选项文本必须是原正确项
+    assert q["answer"] in ("A", "B", "C", "D")
+    assert q["options"][ord(q["answer"]) - 65] == GOOD_CHOICE["options"][0]
+    assert sorted(q["options"]) == sorted(GOOD_CHOICE["options"])
     assert q["source"] == "第5章-Nginx服务部署.md"
     assert llm.calls[0]["response_format"] == {"type": "json_object"}
     prompt = llm.calls[0]["messages"][0]["content"]
@@ -192,3 +195,48 @@ def test_generate_wraps_llm_network_error(kb, db):
 
     with pytest.raises(quiz.QuizError, match="暂时不可用"):
         quiz.generate("nginx", llm=DeadLLM(), db_path=db)
+
+
+# ---------- 审查修复项回归（chinese-code-review） ----------
+
+def test_topic_truncated_to_50(kb, db):
+    """[建议修改] 超长 topic 静默截断，不报错也不注入超长文本。"""
+    llm = FakeLLM([json.dumps(GOOD_CHOICE, ensure_ascii=False)])
+    q = quiz.generate("很长的知识点" * 30, llm=llm, db_path=db)
+    assert len(q["topic"]) <= quiz.MAX_TOPIC_LEN
+    prompt = llm.calls[0]["messages"][0]["content"]
+    assert "很长的知识点" * 30 not in prompt
+
+
+def test_shuffle_keeps_answer_correct(kb, db, monkeypatch):
+    """[问题] 选项洗牌：固定洗牌顺序为逆序，答案字母必须同步换算。"""
+    monkeypatch.setattr(quiz.random, "shuffle", lambda x: x.reverse())
+    llm = FakeLLM([json.dumps(GOOD_CHOICE, ensure_ascii=False)])
+    q = quiz.generate("nginx", llm=llm, db_path=db)
+    # 原正确项是第 1 个（answer=a），逆序后应落到 D
+    assert q["answer"] == "D"
+    assert q["options"][3] == GOOD_CHOICE["options"][0]
+    saved = storage.get_quiz(db, q["quiz_id"])
+    assert saved["answer"] == "D"  # 落库也是洗牌后的
+
+
+def test_api_with_answer_false_strips_secret(monkeypatch):
+    """[建议修改] with_answer=false 时响应不含答案与解析。"""
+    monkeypatch.setattr(main.quiz, "generate", lambda t, d, q: {
+        "quiz_id": 9, "topic": t, "difficulty": d, "qtype": q,
+        "question": "Q", "options": ["1", "2", "3", "4"],
+        "answer": "C", "explanation": "E", "source": "s.md"})
+    r = TestClient(main.app).post(
+        "/api/quiz/generate",
+        json={"topic": "nginx", "with_answer": False})
+    assert r.status_code == 200
+    body = r.json()
+    assert "answer" not in body and "explanation" not in body
+    assert body["quiz_id"] == 9 and len(body["options"]) == 4
+
+
+def test_api_topic_max_length_422():
+    """[建议修改] topic 超过 50 字符被 Pydantic 拦截为 422。"""
+    r = TestClient(main.app).post(
+        "/api/quiz/generate", json={"topic": "x" * 51})
+    assert r.status_code == 422

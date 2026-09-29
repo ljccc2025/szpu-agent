@@ -2,7 +2,7 @@
 
 > 审查规范：`chinese-code-review` skill（分级标注：必须修复 / 建议修改 / 仅供参考 / 问题）
 > 审查范围：`app/tools/quiz.py`、`app/storage.py`（quizzes 表）、`app/llm.py`（response_format）、`app/tools/registry.py`、`app/main.py`（/api/quiz/generate）、`tests/test_quiz*.py`
-> 审查时间：2026-09-29 ｜ 审查结论：**1 个必须修复项已当场修复并补回归测试，其余为建议与参考项，可合入**
+> 审查时间：2026-09-29 ｜ 审查结论：**全部整改完成——1 个必须修复项 + 2 个建议修改项 + 1 个问题项均已修复并补回归测试（117/117 通过）**
 
 ---
 
@@ -14,21 +14,21 @@
 
 修复：在 generate() 中把 LLM 调用包进 try/except，包装为 `QuizError("出题服务暂时不可用…")` 抛出；新增回归测试 `test_generate_wraps_llm_network_error`。验证：113/113 通过。
 
-## [建议修改] topic 无长度限制，超长输入会原样注入 Prompt
+## [建议修改] topic 无长度限制，超长输入会原样注入 Prompt ✅ 已修复
 
 `app/main.py` QuizRequest 与 `quiz.generate()` 均未限制 topic 长度。恶意或误操作传入几 KB 文本会拉高 token 消耗，也存在 Prompt 注入面。
 
-建议：Pydantic 字段加 `max_length=50`（知识点名称不会超过这个数），generate() 同步截断。教学项目风险低，纳入 M13 迭代一并处理。
+修复：QuizRequest 加 `Field(min_length=1, max_length=50)`（超长直接 422），generate() 内部同步截断至 `MAX_TOPIC_LEN=50`。回归测试：`test_topic_truncated_to_50`、`test_api_topic_max_length_422`。
 
-## [建议修改] 出题接口把 answer/explanation 一并返回给前端
+## [建议修改] 出题接口把 answer/explanation 一并返回给前端 ✅ 已修复
 
 `POST /api/quiz/generate` 响应包含正确答案与解析。学生在练习页 F12 即可看到答案。
 
-说明：这与技术文档 M12 的 API 定义一致，且 M13 批改需要服务端存有答案（已落库）。建议 M19 练习页开发时增加"不含答案的出题响应"变体（如 `?with_answer=false`），本次不改接口契约。
+修复：QuizRequest 新增 `with_answer: bool = True`；传 `false` 时响应剥离 answer/explanation（答案留在服务端，M13 批改按 quiz_id 取用），默认行为不变、契约兼容。回归测试：`test_api_with_answer_false_strips_secret`。
 
-## [问题] 单选题正确答案的位置分布是否会偏斜？
+## [问题] 单选题正确答案的位置分布是否会偏斜？ ✅ 已修复
 
-LLM 出题时正确答案常偏向 A/C。当前未做选项洗牌。是否需要在 generate() 落库前随机打乱 options 并同步换算 answer 字母？——留给 M13/M19 联调时观察真实分布再决定，避免过早优化。
+修复：generate() 落库前对 options 随机洗牌并同步换算 answer 字母，保证 A-D 分布均匀；落库与返回均为洗牌后结果。回归测试：`test_shuffle_keeps_answer_correct`（固定逆序洗牌验证换算正确性）。
 
 ## [仅供参考]
 
@@ -43,7 +43,7 @@ LLM 出题时正确答案常偏向 A/C。当前未做选项洗牌。是否需要
 
 | 验证层 | 结果 |
 |--------|------|
-| 本地 pytest（真实 DeepSeek key，含 2 个真实出题集成测试） | 113/113 通过 |
-| VM pytest（.env 真实 key） | 112/112 通过（修复项后待复验 113） |
+| 本地 pytest（真实 DeepSeek key，含 2 个真实出题集成测试） | 117/117 通过（整改后） |
+| VM pytest（.env 真实 key） | 117/117 通过（整改后复验） |
 | 真实链路（对话出题→作答→解析→拒绝课外出题→REST→落库） | 全部通过 |
 | DeepSeek JSON 模式官方四项要求（response_format/含 json 提示词/防截断/空内容重试） | 全部落实 |

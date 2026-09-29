@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app import config, storage
 from app.core import Agent
@@ -33,9 +33,12 @@ class ChatRequest(BaseModel):
 
 
 class QuizRequest(BaseModel):
-    topic: str
+    # max_length：审查修复项，防超长知识点注入 Prompt
+    topic: str = Field(min_length=1, max_length=50)
     difficulty: str = "中等"
     qtype: str = "单选题"
+    # False 时响应剥离答案与解析（审查修复项：练习页 F12 不可见答案）
+    with_answer: bool = True
 
 
 @app.get("/api/health")
@@ -64,10 +67,15 @@ def history(session_id: str):
 @app.post("/api/quiz/generate")
 def quiz_generate(req: QuizRequest):
     try:
-        return quiz.generate(req.topic, req.difficulty, req.qtype)
+        result = quiz.generate(req.topic, req.difficulty, req.qtype)
     except quiz.QuizError as err:
         # 参数非法/知识库无资料/两次生成仍不合格：语义化 422
         raise HTTPException(status_code=422, detail=str(err))
+    if not req.with_answer:
+        # 练习页模式：答案与解析留在服务端（M13 批改时按 quiz_id 取用）
+        result = {k: v for k, v in result.items()
+                  if k not in ("answer", "explanation")}
+    return result
 
 
 # --- M08-M09 知识库管理 ---

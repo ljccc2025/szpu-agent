@@ -10,12 +10,14 @@ DeepSeek JSON 模式官方要求（api-docs.deepseek.com/guides/json_mode，2026
 4) 官方明示可能偶发返回空 content —— 与解析失败一样计入重试。
 """
 import json
+import random
 
 from app import config, storage
 from app.tools import rag_search
 
 VALID_DIFFICULTIES = ("基础", "中等", "困难")
 VALID_QTYPES = ("单选题", "命令实操题")
+MAX_TOPIC_LEN = 50  # 审查修复项：知识点名称长度上限，防超长注入 Prompt
 
 _FORMAT_HINTS = {
     "单选题": (
@@ -85,7 +87,7 @@ def validate_payload(data, qtype):
 
 def generate(topic, difficulty="中等", qtype="单选题", llm=None, db_path=None):
     """出题主流程，返回含 quiz_id 的完整题目 dict（技术文档 M12 对外 API）。"""
-    topic = (topic or "").strip()
+    topic = (topic or "").strip()[:MAX_TOPIC_LEN]  # 超长静默截断（审查修复项）
     if not topic:
         raise QuizError("请告诉我要考察哪个知识点，例如：Nginx 反向代理")
     if difficulty not in VALID_DIFFICULTIES:
@@ -138,14 +140,22 @@ def generate(topic, difficulty="中等", qtype="单选题", llm=None, db_path=No
         raise QuizError(f"出题失败（{last_reason}），请重试一次")
 
     answer = data["answer"].strip()
+    options = data["options"]
     if qtype == "单选题":
         answer = answer.upper()
+        # 审查修复项：LLM 出题正确答案位置常偏向 A/C，落库前洗牌选项
+        # 并同步换算答案字母，保证 A-D 分布均匀
+        correct_idx = ord(answer) - 65
+        order = list(range(4))
+        random.shuffle(order)
+        options = [options[i] for i in order]
+        answer = chr(65 + order.index(correct_idx))
     source = sources[0]["source"]
     quiz_id = storage.save_quiz(
         db_path or config.DB_PATH,
         topic, difficulty, qtype,
         data["question"].strip(),
-        json.dumps(data["options"], ensure_ascii=False),
+        json.dumps(options, ensure_ascii=False),
         answer,
         data["explanation"].strip(),
         source,
@@ -156,7 +166,7 @@ def generate(topic, difficulty="中等", qtype="单选题", llm=None, db_path=No
         "difficulty": difficulty,
         "qtype": qtype,
         "question": data["question"].strip(),
-        "options": data["options"],
+        "options": options,
         "answer": answer,
         "explanation": data["explanation"].strip(),
         "source": source,
