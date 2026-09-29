@@ -60,11 +60,12 @@ def add(ids, embeddings, documents, metadatas):
 def query(embedding, k=5):
     """向量检索 Top-K -> [{text, meta, distance}]，distance 为 cosine 距离(越小越相似)。"""
     col = get_collection()
-    if col.count() == 0:
+    total = col.count()
+    if total == 0:
         return []
     res = col.query(
         query_embeddings=[embedding],
-        n_results=min(k, col.count()),
+        n_results=min(k, total),
         include=["documents", "metadatas", "distances"],
     )
     hits = []

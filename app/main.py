@@ -44,7 +44,11 @@ def chat(req: ChatRequest):
 
 @app.get("/api/history/{session_id}")
 def history(session_id: str):
-    return {"messages": storage.get_history(agent.db_path, session_id)}
+    return {
+        "messages": storage.get_history(
+            agent.db_path, session_id, limit=config.HISTORY_LIMIT
+        )
+    }
 
 
 # --- M08-M09 知识库管理 ---
