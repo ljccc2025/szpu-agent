@@ -8,7 +8,7 @@ import datetime
 import json
 import operator
 
-from app.tools import quiz, rag_search, sandbox
+from app.tools import grader, quiz, rag_search, sandbox
 
 _OPS = {
     ast.Add: operator.add,
@@ -148,6 +148,35 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "grade_answer",
+            "description": (
+                "批改学生对某道练习题的作答，给出分数、点评与薄弱知识点。"
+                "单选题直接比对答案；命令实操题会把学生命令与参考命令"
+                "都放进沙箱真实执行后再判定效果是否等价。"
+                "学生提交答案、要求批改/判分/对答案时调用本工具"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quiz_id": {
+                        "type": "integer",
+                        "description": "要批改的题号，来自 generate_quiz 返回的题号",
+                    },
+                    "student_answer": {
+                        "type": "string",
+                        "description": (
+                            "学生的作答内容；单选题填 A/B/C/D，"
+                            "命令实操题填完整的 shell 命令"
+                        ),
+                    },
+                },
+                "required": ["quiz_id", "student_answer"],
+            },
+        },
+    },
 ]
 
 HANDLERS = {
@@ -156,6 +185,7 @@ HANDLERS = {
     "rag_search": rag_search.search,
     "run_command": sandbox.run_command,
     "generate_quiz": quiz.generate_quiz,
+    "grade_answer": grader.grade_answer,
 }
 
 
