@@ -20,12 +20,22 @@ _OPS = {
     ast.USub: operator.neg,
 }
 
+# 幂运算限幅：9**9**8 这类表达式会算到天荒地老并吃光内存，
+# 而 dispatch 的 try/except 只兜得住异常、兜不住"算得慢"。
+MAX_POW_EXPONENT = 64
+MAX_POW_BASE = 10 ** 6
+
 
 def _safe_eval(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return node.value
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
-        return _OPS[type(node.op)](_safe_eval(node.left), _safe_eval(node.right))
+        left, right = _safe_eval(node.left), _safe_eval(node.right)
+        if isinstance(node.op, ast.Pow) and (
+            abs(right) > MAX_POW_EXPONENT or abs(left) > MAX_POW_BASE
+        ):
+            raise ValueError("指数或底数过大，已拒绝计算（防止占满服务线程）")
+        return _OPS[type(node.op)](left, right)
     if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
         return _OPS[type(node.op)](_safe_eval(node.operand))
     raise ValueError("表达式含不支持的语法")
@@ -92,7 +102,8 @@ TOOLS = [
             "description": (
                 "在安全沙箱（一次性 Docker 容器，无网络、限资源、10秒超时）中"
                 "真实执行 Linux 命令并返回输出。学生要求执行、演示、验证命令"
-                "效果时调用本工具；危险命令会被安全策略自动拦截"
+                "效果时调用本工具；常见危险命令会被黑名单拦下并给出讲解，"
+                "但真正的隔离来自一次性容器本身，黑名单不保证覆盖所有写法"
             ),
             "parameters": {
                 "type": "object",
@@ -117,15 +128,24 @@ HANDLERS = {
 
 
 def dispatch(name, arguments_json):
-    """按名称分发执行工具；任何异常都兜底为文本，不炸整轮对话。"""
+    """按名称分发执行工具，返回 (文本结果, 附带数据)。
+
+    附带数据用于把结构化信息（如 RAG 出处）随本次调用交还调用方，
+    取代原先的模块级全局缓存——全局缓存在并发请求下会串号。
+    任何异常都兜底为文本，不炸整轮对话。
+    """
     handler = HANDLERS.get(name)
     if handler is None:
-        return f"未知工具: {name}"
+        return f"未知工具: {name}", None
     try:
         args = json.loads(arguments_json) if arguments_json else {}
     except json.JSONDecodeError:
-        return "工具参数不是合法 JSON"
+        return "工具参数不是合法 JSON", None
     try:
-        return str(handler(**args))
+        result = handler(**args)
     except Exception as err:
-        return f"工具执行出错: {err}"
+        return f"工具执行出错: {err}", None
+    if isinstance(result, tuple):
+        text, extra = result
+        return str(text), extra
+    return str(result), None
