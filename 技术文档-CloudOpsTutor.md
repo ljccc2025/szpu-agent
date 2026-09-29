@@ -504,15 +504,17 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M15-SSEStream |
-| **物理文件路径** | `app/api/stream.py` |
+| **物理文件路径** | `app/stream.py`（SSE 封装）+ `app/core.py::Agent.chat_stream`（流式循环）+ `app/llm.py::ToolCallAccumulator`（分片还原） |
 | **核心职责** | 把 Agent 的流式 token 与工具调用事件封装为 SSE 事件流（event: token / tool_start / tool_end / done）|
-| **对外API** | `POST /api/chat/stream`（text/event-stream） |
-| **内部技术** | StreamingResponse, async generator, 事件类型分发 |
-| **交互流程** | 前端 fetch 流→逐 token 渲染→工具事件渲染为"正在执行 xx 工具…"气泡 |
+| **对外API** | `POST /api/chat/stream`（text/event-stream，另有 error 事件兜底；与非流式 `/api/chat` 并存不替换） |
+| **内部技术** | StreamingResponse + 同步生成器（openai 客户端是同步的，FastAPI 自动放入线程池）；`tool_calls` 按 index 分桶累积还原；`X-Accel-Buffering: no` 防反代缓冲 |
+| **交互流程** | 前端 `fetch` + `ReadableStream` 逐帧解析（EventSource 只支持 GET，承载不了 POST 会话体）→逐 token 打字机渲染→工具事件渲染为"正在执行 xx 工具…"气泡→`done` 补出处卡 |
 
 **🔧 核心技术栈**: `fastapi` StreamingResponse
 
-**🎯 推荐Skills**: `fastapi-python`（✅ 新装已验证——async generator 模式）
+**🎯 推荐Skills**: `fastapi-python`（✅ 新装已验证——StreamingResponse 生成器模式）
+
+> 实现说明（2026-09-29 落地）：开 `stream=True` 后同一个工具调用会被拆进多个 chunk，首片带 `id` 与 `function.name`，后续片只带 `function.arguments` 的片段，必须按 `index` 分桶累积才能还原；并发多工具时拼错即串号。该逻辑抽成 `ToolCallAccumulator` 纯类单测覆盖。流式过程中**不做重试**——流一旦开始吐字，中途重试会让学生看到重复内容，失败统一兜底成 `error` 事件。
 
 ---
 
@@ -523,7 +525,7 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | **模块ID** | M16-APIRoutes |
 | **物理文件路径** | `app/api/routes.py` |
 | **核心职责** | 全部非流式端点：chat、history、kb 上传/列表/删除、quiz 生成、grade 提交、plan 生成 |
-| **对外API** | `/api/chat /api/history/{sid} /api/kb/* /api/quiz /api/grade /api/plan` |
+| **对外API** | `/api/chat /api/chat/stream /api/history/{sid} /api/kb/* /api/quiz/generate /api/quiz/{id}/grade /api/attempts /api/plan` |
 | **内部技术** | APIRouter, Pydantic 请求模型, UploadFile |
 | **交互流程** | 前端 REST 调用→Pydantic 校验→委托对应模块→统一 JSON 返回 |
 

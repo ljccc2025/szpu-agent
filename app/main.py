@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import config, storage
+from app import config, storage, stream
 from app.core import Agent
 from app.kb import ingest as kb_ingest
 from app.kb import vectorstore
@@ -60,6 +61,23 @@ def health():
 def chat(req: ChatRequest):
     # M07 起返回 {"reply": ..., "sources": [...]}
     return agent.chat(req.session_id, req.message)
+
+
+@app.post("/api/chat/stream")
+def chat_stream(req: ChatRequest):
+    """M15 流式对话：逐 token 推送，工具调用过程实时可见。
+
+    与 /api/chat 并存而非替换——练习页与 apitest.sh 仍依赖非流式端点。
+    """
+    return StreamingResponse(
+        stream.chat_sse(agent, req.session_id, req.message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # 禁止 Nginx 等反向代理缓冲，否则流式会被攒成一坨再吐出来
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/history/{session_id}")

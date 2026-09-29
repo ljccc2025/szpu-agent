@@ -233,3 +233,13 @@ def dispatch(name, arguments_json):
         text, extra = result
         return str(text), extra
     return str(result), None
+
+
+# dispatch 把失败也写成文本返回（不抛异常），这些前缀就是失败的全部形态。
+# 与下方 is_failure 放在一起维护，避免上层去硬编码字符串匹配。
+FAILURE_PREFIXES = ("未知工具:", "工具参数不是合法 JSON", "工具执行出错:")
+
+
+def is_failure(result_text):
+    """判断 dispatch 返回的文本是否代表调度层失败（M15 tool_end 如实上报）。"""
+    return str(result_text).startswith(FAILURE_PREFIXES)

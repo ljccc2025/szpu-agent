@@ -201,6 +201,18 @@ main{flex:1;min-height:0;display:flex;}
   border-radius:50%;animation:sp .7s linear infinite;}
 @keyframes sp{to{transform:rotate(360deg);}}
 
+/* ---------- M15 流式：打字机光标与工具执行气泡 ---------- */
+.caret{display:inline-block;width:2px;height:1em;vertical-align:-2px;margin-left:1px;
+  background:var(--accent);animation:blink 1s steps(2) infinite;}
+@keyframes blink{50%{opacity:0;}}
+.tools{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2);}
+.tool-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;
+  padding:3px 9px;border-radius:999px;border:1px solid var(--border);
+  background:var(--card);color:var(--muted-fg);}
+.tool-chip.ok{color:var(--ok);border-color:var(--ok);}
+.tool-chip.bad{color:var(--danger);border-color:var(--danger);}
+.tool-chip .spin{width:11px;height:11px;border-width:2px;}
+
 /* ---------- 知识库 ---------- */
 .drop{border:1.5px dashed var(--border-strong);border-radius:var(--r3);
   padding:var(--s6) var(--s5);text-align:center;color:var(--muted-fg);font-size:13.5px;
@@ -529,26 +541,27 @@ document.querySelector("nav").addEventListener("click", e => {
 });
 
 /* ============ 对话 ============ */
+/** 出处卡 HTML：非流式渲染与流式收尾共用，避免两处各写一遍 */
+function citeHTML(sources){
+  if(!sources || !sources.length) return "";
+  const items = sources.map((s, i) => `
+    <div class="cite-item"><div class="cite-no">${i + 1}</div>
+      <div style="min-width:0"><div class="cite-src">${esc(s.source)} · 第 ${esc(s.page)} 页</div>
+      <div class="cite-qt">${esc(s.excerpt)}…</div></div>
+      <div class="cite-sc">相似度 ${esc(s.score)}</div></div>`).join("");
+  return `<div class="cite"><button class="cite-btn" type="button">
+      ${icon(I.book, 14)} 回答依据 <span class="chip brand">${sources.length} 个出处</span>
+      <span class="arr">${icon('<path d="m6 9 6 6 6-6"/>', 14)}</span></button>
+    <div class="cite-body">${items}</div></div>`;
+}
 function bubble(role, html, stamp, sources){
   const row = document.createElement("div");
   row.className = "msg" + (role === "me" ? " me" : "");
-  let cite = "";
-  if(sources && sources.length){
-    const items = sources.map((s, i) => `
-      <div class="cite-item"><div class="cite-no">${i + 1}</div>
-        <div style="min-width:0"><div class="cite-src">${esc(s.source)} · 第 ${esc(s.page)} 页</div>
-        <div class="cite-qt">${esc(s.excerpt)}…</div></div>
-        <div class="cite-sc">相似度 ${esc(s.score)}</div></div>`).join("");
-    cite = `<div class="cite"><button class="cite-btn" type="button">
-        ${icon(I.book, 14)} 回答依据 <span class="chip brand">${sources.length} 个出处</span>
-        <span class="arr">${icon('<path d="m6 9 6 6 6-6"/>', 14)}</span></button>
-      <div class="cite-body">${items}</div></div>`;
-  }
   row.innerHTML = `<div class="ava ${role === "me" ? "me" : "ai"}">${
       role === "me" ? icon('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', 16)
                     : icon('<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>', 16)
     }</div>
-    <div class="body"><div class="bubble">${html}</div>${cite}
+    <div class="body"><div class="bubble">${html}</div>${citeHTML(sources)}
       <div class="stamp">${esc(stamp || "")}</div></div>`;
   $("#msgs").appendChild(row);
   row.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -561,6 +574,73 @@ $("#msgs").addEventListener("click", e => {
   c.hasAttribute("open") ? c.removeAttribute("open") : c.setAttribute("open", "");
 });
 
+/* ---- M15 流式对话 ----
+   用 fetch + ReadableStream 而不是 EventSource：后者只支持 GET，
+   而本接口要 POST 会话体。 */
+
+/** 逐块读取 SSE 流，按空行切帧后回调 (事件名, 载荷)。一次 read 可能
+    带回多帧，也可能只带回半帧，所以要用缓冲区跨块拼接。 */
+async function readSSE(body, onEvent){
+  const reader = body.getReader(), decoder = new TextDecoder();
+  let buf = "";
+  for(;;){
+    const { value, done } = await reader.read();
+    if(done) break;
+    buf += decoder.decode(value, { stream: true });
+    let i;
+    while((i = buf.indexOf("\n\n")) >= 0){
+      const frame = buf.slice(0, i); buf = buf.slice(i + 2);
+      let ev = "message", data = "";
+      for(const line of frame.split("\n")){
+        if(line.startsWith("event:")) ev = line.slice(6).trim();
+        else if(line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if(data) onEvent(ev, JSON.parse(data));
+    }
+  }
+}
+
+/** 消费一条流式回答：打字机渲染 + 工具气泡 + 收尾补出处 */
+async function consumeStream(resp, t0){
+  const row = bubble("ai", '<span class="caret"></span>', "");
+  const body = row.querySelector(".body"), bub = row.querySelector(".bubble");
+  const stamp = row.querySelector(".stamp");
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  body.insertBefore(tools, stamp);
+
+  let text = "", result = null, failed = null;
+  const pending = [];   // 工具气泡按 FIFO 配对，避免同名工具选择器打架
+  await readSSE(resp.body, (ev, data) => {
+    if(ev === "token"){
+      text += data.text;
+      // 累积后整体重渲染：markdown 被截断时不会留下半截标记
+      bub.innerHTML = md(text) + '<span class="caret"></span>';
+      row.scrollIntoView({ behavior: "smooth", block: "end" });
+    }else if(ev === "tool_start"){
+      const chip = document.createElement("span");
+      chip.className = "tool-chip";
+      chip.innerHTML = '<span class="spin"></span>正在执行 ' + esc(data.name) + "…";
+      tools.appendChild(chip); pending.push(chip);
+    }else if(ev === "tool_end"){
+      const chip = pending.shift();
+      if(chip){
+        chip.className = "tool-chip " + (data.ok ? "ok" : "bad");
+        chip.innerHTML = icon(data.ok ? I.check : I.x, 13) + " " + esc(data.name);
+      }
+    }else if(ev === "done"){ result = data;
+    }else if(ev === "error"){ failed = data.message; }
+  });
+
+  if(failed){
+    bub.innerHTML = `<span style="color:var(--danger)">${icon(I.alert, 14)} ${esc(failed)}</span>`;
+    return;
+  }
+  bub.innerHTML = md((result && result.reply) || text);
+  if(result) stamp.insertAdjacentHTML("beforebegin", citeHTML(result.sources));
+  stamp.textContent = ((Date.now() - t0) / 1000).toFixed(1) + " 秒";
+}
+
 async function send(){
   const txt = $("#ipt").value.trim(); if(!txt) return;
   $("#ipt").value = ""; $("#ipt").style.height = "auto";
@@ -568,11 +648,28 @@ async function send(){
   btn.innerHTML = '<span class="spin"></span>思考中';
   bubble("me", esc(txt), new Date().toLocaleTimeString("zh-CN", { hour12: false }));
   const t0 = Date.now();
+  let started = false;
   try{
-    const d = await api("/api/chat", { method: "POST", body: JSON.stringify({ session_id: sid, message: txt }) });
-    bubble("ai", md(d.reply), ((Date.now() - t0) / 1000).toFixed(1) + " 秒", d.sources);
+    const resp = await fetch("/api/chat/stream", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sid, message: txt })
+    });
+    if(!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+    started = true;
+    await consumeStream(resp, t0);
   }catch(err){
-    bubble("ai", `<span style="color:var(--danger)">${icon(I.alert, 14)} 请求失败：${esc(err.message)}</span>`, "");
+    if(started){
+      // 流已开始：后端很可能已落库，回落重发会产生重复记录，只提示不重试
+      bubble("ai", `<span style="color:var(--danger)">${icon(I.alert, 14)} 连接中断：${esc(err.message)}</span>`, "");
+    }else{
+      // 压根没连上流式端点：回落非流式，保证答辩现场不空屏
+      try{
+        const d = await api("/api/chat", { method: "POST", body: JSON.stringify({ session_id: sid, message: txt }) });
+        bubble("ai", md(d.reply), ((Date.now() - t0) / 1000).toFixed(1) + " 秒", d.sources);
+      }catch(e2){
+        bubble("ai", `<span style="color:var(--danger)">${icon(I.alert, 14)} 请求失败：${esc(e2.message)}</span>`, "");
+      }
+    }
   }finally{
     btn.disabled = false;
     btn.innerHTML = icon('<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>') + " 发送";
