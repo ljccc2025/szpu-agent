@@ -181,3 +181,14 @@ def test_api_quiz_generate_422(monkeypatch):
     r = TestClient(main.app).post("/api/quiz/generate", json={"topic": "x"})
     assert r.status_code == 422
     assert "无法出题" in r.json()["detail"]
+
+
+def test_generate_wraps_llm_network_error(kb, db):
+    """审查修复项：LLM 网络层异常必须包装为 QuizError（REST 422 而非 500）。"""
+
+    class DeadLLM:
+        def complete(self, *a, **k):
+            raise ConnectionError("network down")
+
+    with pytest.raises(quiz.QuizError, match="暂时不可用"):
+        quiz.generate("nginx", llm=DeadLLM(), db_path=db)

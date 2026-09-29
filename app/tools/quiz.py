@@ -111,10 +111,15 @@ def generate(topic, difficulty="中等", qtype="单选题", llm=None, db_path=No
     last_reason = "未知原因"
     data = None
     for _ in range(2):  # 首次 + 重试 1 次（技术文档 M12）
-        msg = llm.complete(
-            [{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-        )
+        try:
+            msg = llm.complete(
+                [{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+        except Exception as err:
+            # 网络/限流层面失败（llm 内部已重试 2 次）：包装成 QuizError，
+            # 让 REST 路由返回语义化 422 而不是裸 500（chinese-code-review 修复项）
+            raise QuizError(f"出题服务暂时不可用（{err.__class__.__name__}），请稍后再试") from err
         content = (getattr(msg, "content", None) or "").strip()
         if not content:
             last_reason = "模型返回空内容"  # DeepSeek 官方明示的偶发情况
