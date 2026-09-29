@@ -9,7 +9,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from playwright.sync_api import sync_playwright
 
 URL = "http://192.168.100.136:8000"
-Q = "nginx 反向代理怎么配置？"
+Q = sys.argv[1] if len(sys.argv) > 1 else "nginx 反向代理怎么配置？"
+NEED_CITE = "--no-cite" not in sys.argv  # 沙箱类问题不要求出处卡
 
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True)
@@ -45,7 +46,7 @@ with sync_playwright() as p:
 
     cite = pg.locator(".cite-h").last
     has_cite = cite.count() > 0
-    if has_cite:
+    if has_cite and NEED_CITE:
         print("CITE_HEADER:", cite.inner_text().replace("\n", " "))
         cite.click()  # 展开出处折叠卡
         pg.wait_for_timeout(600)
