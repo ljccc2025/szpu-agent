@@ -55,7 +55,15 @@ class Agent:
                 if call.function.name == "rag_search":
                     from app.tools import rag_search
 
-                    sources.extend(rag_search.pop_last_sources())
+                    for s in rag_search.pop_last_sources():
+                        # 多轮检索可能命中同一知识块，按(来源,页码,摘录)去重
+                        if not any(
+                            s["source"] == x["source"]
+                            and s["page"] == x["page"]
+                            and s["excerpt"] == x["excerpt"]
+                            for x in sources
+                        ):
+                            sources.append(s)
         storage.save_message(self.db_path, session_id, "user", user_message)
         storage.save_message(self.db_path, session_id, "assistant", reply)
         return {"reply": reply, "sources": sources}

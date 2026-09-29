@@ -94,7 +94,7 @@
 
 | 维度 | 详情 |
 |------|------|
-| **我们的选择** | **ChromaDB 0.5.x（本地嵌入式模式）** |
+| **我们的选择** | **ChromaDB 1.5.x（本地嵌入式模式）** |
 | 备选方案 | FAISS、Milvus Lite、Qdrant |
 | 决定性理由 | 1) pip 装完即用，无独立服务进程；2) 自带持久化（SQLite+parquet），重启不丢；3) API 三行代码完成增查删；4) 支持 metadata 过滤（按课程/章节筛选）|
 | 关键应用点 | 课程资料向量存取、Top-K 相似度检索、来源 metadata 回带 |
@@ -105,7 +105,7 @@
 
 | 维度 | 详情 |
 |------|------|
-| **我们的选择** | **BAAI/bge-small-zh-v1.5 + sentence-transformers 3.x（本地推理）** |
+| **我们的选择** | **BAAI/bge-small-zh-v1.5 + sentence-transformers 6.x（本地推理）** |
 | 备选方案 | 智谱 embedding-3 API、text-embedding-3-small |
 | 决定性理由 | 1) 中文检索质量在同体积模型中最优；2) 仅 90MB，CPU 可跑，笔记本无压力；3) 本地推理零 API 费用、离线可演示；4) sentence-transformers 一行 encode |
 | 关键应用点 | 文档切块向量化、查询向量化 |
@@ -182,7 +182,7 @@
 
 | 维度 | 详情 |
 |------|------|
-| **我们的选择** | **pypdf 5.x + markdown 原生读取** |
+| **我们的选择** | **pypdf 6.x + markdown 原生读取** |
 | 备选方案 | pdfplumber、unstructured、OCR 方案 |
 | 决定性理由 | 1) 课程 PPT 导出 PDF 多为文字版，pypdf 纯 Python 无系统依赖；2) 扫描件场景保留 ocr-document-processor 技能作升级路径 |
 | 关键应用点 | 知识库摄取管道的文本提取 |
@@ -357,7 +357,7 @@ return "工具调用次数超限，请换个问法"
 | **内部技术** | 相似度阈值过滤(distance<0.6), metadata 回带 source/page |
 | **交互流程** | Agent 决策调用→embedder 编码→vectorstore 查询→格式化返回 |
 
-**🔧 核心技术栈**: `chromadb` 0.5.x、`sentence-transformers` 3.x
+**🔧 核心技术栈**: `chromadb` 1.5.x（系统 sqlite<3.35 时按官方方案用 pysqlite3-binary 顶替）、`sentence-transformers` 6.x
 
 **🎯 推荐Skills**: `rag-skills`（✅ 新装已验证——检索质量/重排章节）
 
@@ -391,7 +391,7 @@ return "工具调用次数超限，请换个问法"
 | **内部技术** | PersistentClient(path=CHROMA_DIR), get_or_create_collection |
 | **交互流程** | ingest 写入 / rag_search 查询 / kb 管理页删除 |
 
-**🔧 核心技术栈**: `chromadb` 0.5.x
+**🔧 核心技术栈**: `chromadb` 1.5.x（系统 sqlite<3.35 时按官方方案用 pysqlite3-binary 顶替）
 
 **🎯 推荐Skills**: `rag-skills`（向量库运维章节）、`performance-engineer`（本地）
 
@@ -408,7 +408,7 @@ return "工具调用次数超限，请换个问法"
 | **内部技术** | sentence-transformers, 模块级懒加载单例, batch_size=32 |
 | **交互流程** | 首次调用加载模型(约3秒)→后续毫秒级编码 |
 
-**🔧 核心技术栈**: `sentence-transformers` 3.x、`BAAI/bge-small-zh-v1.5`
+**🔧 核心技术栈**: `sentence-transformers` 6.x、`BAAI/bge-small-zh-v1.5`
 
 **🎯 推荐Skills**: `performance-engineer`（本地，编码批量化）
 

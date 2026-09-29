@@ -15,9 +15,25 @@ _client = None
 _collection = None
 
 
+def _ensure_sqlite():
+    """Chroma 需要 sqlite>=3.35；老系统(如 Rocky 8 的 3.26)按官方
+    troubleshooting 方案用 pysqlite3-binary 顶替标准库 sqlite3。"""
+    import sqlite3
+
+    if sqlite3.sqlite_version_info < (3, 35, 0):
+        try:
+            __import__("pysqlite3")
+            import sys
+
+            sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+        except ImportError:
+            pass  # 无 pysqlite3 时让 chromadb 自己报错，便于定位
+
+
 def get_collection():
     global _client, _collection
     if _collection is None:
+        _ensure_sqlite()
         import chromadb
 
         _client = chromadb.PersistentClient(path=config.CHROMA_DIR)
