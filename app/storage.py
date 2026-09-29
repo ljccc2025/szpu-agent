@@ -1,5 +1,6 @@
 """M03 SQLite 存储：唯一操作数据库的模块。"""
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 
@@ -18,7 +19,9 @@ def _conn(db_path):
 
 
 def save_message(db_path, session_id, role, content):
-    with _conn(db_path) as c:
+    # closing() 负责关闭连接，内层 with 负责提交事务。
+    # sqlite3 的上下文管理器只提交/回滚，不会关闭连接，单用会泄漏句柄。
+    with closing(_conn(db_path)) as c, c:
         c.execute(
             "INSERT INTO messages(session_id, role, content) VALUES(?,?,?)",
             (session_id, role, content),
@@ -26,7 +29,7 @@ def save_message(db_path, session_id, role, content):
 
 
 def get_history(db_path, session_id, limit=20):
-    with _conn(db_path) as c:
+    with closing(_conn(db_path)) as c:
         rows = c.execute(
             "SELECT role, content FROM ("
             "SELECT * FROM messages WHERE session_id=? ORDER BY id DESC LIMIT ?"
