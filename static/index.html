@@ -311,7 +311,7 @@ td:nth-child(4){width:100%;}
         <path d="m9 14 2 2 4-4"/>
       </svg>
     </div>
-    <div class="brand-txt"><b>CloudOps Tutor</b><span>云运维学习助教 · RAG 知识库 · 沙箱实操 · 智能批改</span></div>
+    <div class="brand-txt"><b>CloudOps Tutor</b><span>云运维学习助教 · RAG 知识库 · 沙箱实操 · 智能批改 · 学习规划</span></div>
   </div>
 
   <nav role="tablist" aria-label="主导航">
@@ -434,9 +434,12 @@ td:nth-child(4){width:100%;}
           <div style="margin-left:auto;display:flex;gap:6px;">
             <button class="btn ghost sm" id="f-wrong" aria-pressed="true">只看错题</button>
             <button class="btn ghost sm" id="f-all" aria-pressed="false">全部记录</button>
+            <button class="btn sm" id="mkplan">生成复习计划</button>
           </div>
         </div>
         <div id="wb"><div class="sk"></div><div class="sk" style="width:60%"></div></div>
+        <div id="plan-box" style="display:none;margin-top:16px;
+          border-top:1px solid var(--border);padding-top:16px;"></div>
       </div>
     </div></div>
   </section>
@@ -745,6 +748,39 @@ function setWb(m){
   $("#f-all").style.borderColor = m === "all" ? "var(--accent)" : "";
   loadWb();
 }
+
+/* ============ 复习计划（M14） ============ */
+$("#mkplan").addEventListener("click", async () => {
+  const btn = $("#mkplan"), box = $("#plan-box");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>生成中';
+  box.style.display = "";
+  box.innerHTML = '<div class="sk"></div><div class="sk" style="width:70%"></div>';
+  try{
+    const p = await api("/api/plan", { method: "POST", body: JSON.stringify({ days: 7 }) });
+    box.innerHTML = `
+      <div class="card-h" style="margin-bottom:12px">
+        ${icon(I.book, 16)}<h2>${esc(p.days)} 天复习计划</h2>
+        <span class="chip brand">依据 ${p.weak_topics.length} 个薄弱知识点</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        ${p.weak_topics.map(t => `<span class="chip danger">${esc(t.topic)}
+          · 错 ${esc(t.wrong_count)}/${esc(t.total_count)}</span>`).join("")}
+      </div>
+      ${p.daily_plan.map(d => `
+        <div class="src" style="align-items:flex-start">
+          <span class="chip brand" style="flex-shrink:0">第 ${esc(d.day)} 天</span>
+          <div style="min-width:0">
+            <div style="font-weight:600;margin-bottom:4px">${esc(d.topic)}</div>
+            <div style="color:var(--muted-fg);line-height:1.75">
+              复习重点：${esc(d.focus)}<br>练习建议：${esc(d.practice)}</div>
+          </div></div>`).join("")}
+      ${p.sources.length ? `<div class="meta-line">${icon(I.book, 14)}
+        参考讲义：${p.sources.map(esc).join("、")}</div>` : ""}`;
+  }catch(err){
+    box.innerHTML = `<div class="empty">${icon(I.alert, 30)}${esc(err.message)}</div>`;
+  }finally{
+    btn.disabled = false; btn.textContent = "生成复习计划";
+  }
+});
 
 /* ============ 演示模式提示 ============ */
 let bannerShown = false;

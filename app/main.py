@@ -14,7 +14,7 @@ from app.core import Agent
 from app.kb import ingest as kb_ingest
 from app.kb import vectorstore
 from app.llm import LLMClient
-from app.tools import grader, quiz
+from app.tools import grader, planner, quiz
 
 
 @asynccontextmanager
@@ -44,6 +44,11 @@ class QuizRequest(BaseModel):
 class GradeRequest(BaseModel):
     # max_length 与 grader.MAX_ANSWER_LEN 对齐，超长在入口就拒绝
     student_answer: str = Field(min_length=1, max_length=500)
+
+
+class PlanRequest(BaseModel):
+    # 与 planner.MIN_DAYS / MAX_DAYS 对齐，越界在入口就拒绝
+    days: int = Field(default=7, ge=1, le=30)
 
 
 @app.get("/api/health")
@@ -105,6 +110,16 @@ def attempts(only_wrong: bool = False):
             max_score=grader.PASS_SCORE if only_wrong else None,
         )
     }
+
+
+@app.post("/api/plan")
+def study_plan(req: PlanRequest):
+    """M14 根据错题本生成复习计划。"""
+    try:
+        return planner.make_plan(req.days, db_path=agent.db_path)
+    except planner.PlannerError as err:
+        # 错题本为空/天数非法/模型不可用：语义化 422
+        raise HTTPException(status_code=422, detail=str(err))
 
 
 # --- M08-M09 知识库管理 ---

@@ -125,3 +125,39 @@ def list_attempts(db_path, limit=50, max_score=None):
     with closing(_conn(db_path)) as c:
         rows = c.execute(sql, params).fetchall()
     return [dict(zip(_ATTEMPT_COLS, r)) for r in rows]
+
+
+def aggregate_weak_topics(db_path, max_score=60, limit=5):
+    """按 topic 聚合错题，返回薄弱知识点排名（M14）。
+
+    排序：错题数多的在前；错题数相同时平均分低的在前。
+    只返回至少错过一次的知识点。
+    """
+    with closing(_conn(db_path)) as c:
+        rows = c.execute(
+            "SELECT topic,"
+            " SUM(CASE WHEN score < ? THEN 1 ELSE 0 END) AS wrong,"
+            " COUNT(*) AS total,"
+            " AVG(score) AS avg_score"
+            " FROM attempts GROUP BY topic"
+            " HAVING wrong > 0"
+            " ORDER BY wrong DESC, avg_score ASC, topic ASC"
+            " LIMIT ?",
+            (max_score, limit),
+        ).fetchall()
+    return [
+        {"topic": t, "wrong_count": w, "total_count": n,
+         "avg_score": round(a, 1)}
+        for t, w, n, a in rows
+    ]
+
+
+def weak_point_rows(db_path, topic, max_score=60, limit=20):
+    """取某知识点下错题的 weak_points 原始 JSON 文本（解析交给调用方）。"""
+    with closing(_conn(db_path)) as c:
+        rows = c.execute(
+            "SELECT weak_points FROM attempts"
+            " WHERE topic=? AND score < ? ORDER BY id DESC LIMIT ?",
+            (topic, max_score, limit),
+        ).fetchall()
+    return [r[0] for r in rows]
