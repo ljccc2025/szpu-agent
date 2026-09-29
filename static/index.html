@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CloudOps Tutor</title>
+<style>
+  body { max-width: 760px; margin: 24px auto; font-family: system-ui; }
+  .msg { padding: 10px 14px; border-radius: 8px; margin: 8px 0; white-space: pre-wrap; }
+  .user { background: #e8f3ff; text-align: right; }
+  .assistant { background: #f5f5f5; }
+  #box { display: flex; gap: 8px; margin-top: 12px; }
+  #ipt { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; }
+  button { padding: 10px 18px; border: 0; border-radius: 6px; background: #409eff; color: #fff; cursor: pointer; }
+  button:disabled { background: #a0cfff; }
+</style>
+</head>
+<body>
+<h2>CloudOps Tutor 云运维学习助教（M01-M06 验证页）</h2>
+<div id="list"></div>
+<div id="box">
+  <input id="ipt" placeholder="输入问题，回车发送。试试：帮我算 (2+3)*7 / 现在几点了？">
+  <button id="btn">发送</button>
+</div>
+<script>
+const list = document.getElementById("list");
+const ipt = document.getElementById("ipt");
+const btn = document.getElementById("btn");
+const sid = "web-" + Date.now();
+function bubble(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  d.textContent = text;
+  list.appendChild(d);
+}
+async function send() {
+  const text = ipt.value.trim();
+  if (!text) return;
+  bubble("user", text);
+  ipt.value = ""; btn.disabled = true;
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sid, message: text })
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    console.log("chat ok:", data);
+    bubble("assistant", data.reply);
+  } catch (e) {
+    console.error("chat failed:", e);
+    bubble("assistant", "请求失败: " + e.message);
+  } finally { btn.disabled = false; ipt.focus(); }
+}
+btn.onclick = send;
+ipt.addEventListener("keyup", e => { if (e.key === "Enter") send(); });
+</script>
+</body>
+</html>
