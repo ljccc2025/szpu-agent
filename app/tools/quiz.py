@@ -174,7 +174,13 @@ def generate(topic, difficulty="中等", qtype="单选题", llm=None, db_path=No
 
 
 def generate_quiz(topic, difficulty="中等", qtype="单选题"):
-    """Agent 工具入口：返回给 LLM 转述的文本（registry 调用）。"""
+    """Agent 工具入口：只把题面交给 LLM，答案与解析留在服务端。
+
+    绝不把正确答案放进对话上下文——仅靠 Prompt 叮嘱模型「先别公布」
+    并不可靠，模型完全可能在出题同一轮里把答案一起念出来。
+    学生作答后由 M13 的 grade_answer(quiz_id, student_answer) 从
+    quizzes 表取标准答案批改，届时才返回答案与解析。
+    """
     try:
         q = generate(topic, difficulty, qtype)
     except QuizError as err:
@@ -184,9 +190,10 @@ def generate_quiz(topic, difficulty="中等", qtype="单选题"):
         f"【{q['difficulty']}·{q['qtype']}】{q['question']}",
     ]
     lines += [f"{chr(65 + i)}. {opt}" for i, opt in enumerate(q["options"])]
-    lines.append(f"[正确答案] {q['answer']}")
-    lines.append(f"[解析] {q['explanation']}")
     lines.append(
-        "注意：请先只向学生展示题号、题目与选项，等学生作答后再公布答案和解析。"
+        "请把题号、题目与选项原样展示给学生。"
+        "正确答案与解析保存在服务端，你这里拿不到，不要猜测也不要编造。"
+        f"学生作答后调用 grade_answer(quiz_id={q['quiz_id']}, student_answer=学生的答案) "
+        "批改，那时才会返回正确答案与解析。"
     )
     return "\n".join(lines)

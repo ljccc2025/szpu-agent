@@ -140,8 +140,30 @@ def test_generate_quiz_tool_text(kb, db, monkeypatch):
         "question": "Q?", "options": ["1", "2", "3", "4"],
         "answer": "B", "explanation": "E", "source": "第5章.md"})
     text = quiz.generate_quiz("nginx")
-    assert "#7" in text and "A. 1" in text and "[正确答案] B" in text
-    assert "先只向学生展示" in text
+    assert "#7" in text and "A. 1" in text and "D. 4" in text
+    assert "第5章.md" in text
+
+
+def test_generate_quiz_tool_does_not_leak_answer(monkeypatch):
+    """回归：出题工具不得把正确答案与解析放进 LLM 上下文。
+
+    只靠 Prompt 叮嘱模型「先别公布」不可靠——模型完全可能在出题时
+    连答案一起念出来，现场演示即翻车。答案留服务端，批改时再取。
+    """
+    monkeypatch.setattr(quiz, "generate", lambda *a, **k: {
+        "quiz_id": 7, "topic": "nginx", "difficulty": "中等", "qtype": "单选题",
+        "question": "Q?", "options": ["1", "2", "3", "4"],
+        "answer": "B", "explanation": "这段解析是机密的", "source": "第5章.md"})
+    text = quiz.generate_quiz("nginx")
+    # 关键：答案值与解析内容不得出现在给 LLM 的文本里
+    assert "这段解析是机密的" not in text
+    assert "[正确答案]" not in text
+    assert "[解析]" not in text
+    # 必须明确告知模型答案在服务端、拿不到
+    assert "保存在服务端" in text
+    # 必须明确告诉模型：答案拿不到、别编，作答后走 grade_answer
+    assert "grade_answer" in text
+    assert "不要猜测" in text or "不要编造" in text
 
 
 def test_generate_quiz_tool_error_as_text(monkeypatch):
