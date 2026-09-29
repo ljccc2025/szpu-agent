@@ -566,13 +566,17 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | 属性 | 内容 |
 |------|------|
 | **模块ID** | M19-PracticePage |
-| **物理文件路径** | `static/practice.html` |
-| **核心职责** | 选知识点/难度→出题→作答（选择题单选/实操题命令输入框）→提交批改→展示分数点评→错题本视图 |
-| **对外API** | 页面路由 `/practice.html` |
-| **内部技术** | 题型条件渲染, 批改结果分级配色（≥80绿/60-79黄/<60红） |
-| **交互流程** | 出题→答题→POST /api/grade→点评渲染→错题本 tab 查看历史 |
+| **物理文件路径** | `static/index.html`（第三个页签「练习与批改」；与 M17/M18 同页，不另建 practice.html） |
+| **核心职责** | 选知识点/难度/题型→出题→作答（单选题选项按钮／命令实操题等宽输入框）→提交批改→展示分数点评与出处→同页错题本表格 |
+| **对外API** | 页内 `POST /api/quiz/generate`（with_answer=false）、`POST /api/quiz/{id}/grade`、`GET /api/attempts` |
+| **内部技术** | 题型条件渲染, 批改结果分级配色（≥80绿/60-79黄/<60红）, data 属性+事件委托（不拼 onclick）, 后端不可达时降级演示数据 |
+| **交互流程** | 出题→答题→POST /api/quiz/{id}/grade→点评渲染→同页错题本刷新 |
 
-**🔧 核心技术栈**: `vue` 3.5、`element-plus`
+**🔧 核心技术栈**: 原生 JS（无框架、无 CDN 依赖，断网可演示）、内联 SVG 图标、CSS 语义色 token 双主题
+
+**🎨 设计系统**（ui-ux-pro-max 生成）: 风格 Data-Dense Dashboard + Dark Mode(OLED) 双主题；浅色 B2B Service「navy #0F172A + CTA #0369A1」，深色 OLED「code dark #0F172A + run green #22C55E」；字体用系统栈而非 Google Fonts CDN（离线可用）
+
+**✅ 验收脚本**: `pwtest_ui.py` —— 24 项浏览器断言（结构/深色模式/XSS 回归/练习控件/出题批改闭环/错题本/375px 响应式/控制台零报错）
 
 **🎯 推荐Skills**: `ui-ux-designer`（本地）、`vue-best-practices`（本地）
 
