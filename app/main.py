@@ -14,6 +14,7 @@ from app.core import Agent
 from app.kb import ingest as kb_ingest
 from app.kb import vectorstore
 from app.llm import LLMClient
+from app.tools import quiz
 
 
 @asynccontextmanager
@@ -29,6 +30,12 @@ agent = Agent(LLMClient())
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+
+
+class QuizRequest(BaseModel):
+    topic: str
+    difficulty: str = "中等"
+    qtype: str = "单选题"
 
 
 @app.get("/api/health")
@@ -49,6 +56,18 @@ def history(session_id: str):
             agent.db_path, session_id, limit=config.HISTORY_LIMIT
         )
     }
+
+
+# --- M12 智能出题（练习页 M19 与调试用；对话场景走 generate_quiz 工具） ---
+
+
+@app.post("/api/quiz/generate")
+def quiz_generate(req: QuizRequest):
+    try:
+        return quiz.generate(req.topic, req.difficulty, req.qtype)
+    except quiz.QuizError as err:
+        # 参数非法/知识库无资料/两次生成仍不合格：语义化 422
+        raise HTTPException(status_code=422, detail=str(err))
 
 
 # --- M08-M09 知识库管理 ---

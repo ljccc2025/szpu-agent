@@ -8,7 +8,7 @@ import datetime
 import json
 import operator
 
-from app.tools import rag_search, sandbox
+from app.tools import quiz, rag_search, sandbox
 
 _OPS = {
     ast.Add: operator.add,
@@ -117,6 +117,37 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_quiz",
+            "description": (
+                "根据课程知识库出一道练习题（先检索课程资料取材，"
+                "题目必有讲义依据；知识库没有该知识点资料时会拒绝出题）。"
+                "学生要求出题、练习、测验、考察某知识点时调用"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "要考察的知识点，如：Nginx 反向代理",
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["基础", "中等", "困难"],
+                        "description": "难度，默认中等",
+                    },
+                    "qtype": {
+                        "type": "string",
+                        "enum": ["单选题", "命令实操题"],
+                        "description": "题型，默认单选题",
+                    },
+                },
+                "required": ["topic"],
+            },
+        },
+    },
 ]
 
 HANDLERS = {
@@ -124,6 +155,7 @@ HANDLERS = {
     "get_current_time": get_current_time,
     "rag_search": rag_search.search,
     "run_command": sandbox.run_command,
+    "generate_quiz": quiz.generate_quiz,
 }
 
 

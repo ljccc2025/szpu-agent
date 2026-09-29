@@ -276,7 +276,7 @@
 **核心表结构**:
 ```sql
 messages(id, session_id, role, content, created_at)
-quizzes(id, topic, difficulty, question, answer, explanation, created_at)
+quizzes(id, topic, difficulty, qtype, question, options, answer, explanation, source, created_at)
 attempts(id, quiz_id, student_answer, score, feedback, created_at)
 -- 错题本 = attempts 中 score < 60 的记录联查 quizzes
 ```
@@ -447,7 +447,7 @@ BLOCKED = [r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":\(\)\{.*\};:", r"shutdown",
 | **内部技术** | response_format=json_object, JSON 解析失败自动重试 1 次, 落库 quizzes 表 |
 | **交互流程** | Agent/练习页调用→rag_search 取知识片段→出题 Prompt→JSON 校验→存库返回 |
 
-**🔧 核心技术栈**: `openai` 1.x、`sqlite3`
+**🔧 核心技术栈**: `openai` 3.x、`sqlite3`
 
 **🎯 推荐Skills**: `rag-skills`（取材检索）、`test_driven_development`（MCP 直用）
 

@@ -29,14 +29,20 @@ class LLMClient:
             api_key=api_key or config.LLM_API_KEY or "sk-placeholder",
         )
 
-    def complete(self, messages, tools=None):
-        """返回 message 对象（含 .content 与 .tool_calls），失败重试 2 次。"""
+    def complete(self, messages, tools=None, response_format=None):
+        """返回 message 对象（含 .content 与 .tool_calls），失败重试 2 次。
+
+        response_format：透传 DeepSeek JSON 模式（如 {"type": "json_object"}），
+        官方要求同时在 prompt 中包含 "json" 字样与输出示例（M12 出题用）。
+        """
         last_err = None
         for attempt in range(3):
             try:
                 kwargs = {"model": self.model, "messages": messages}
                 if tools:
                     kwargs["tools"] = tools
+                if response_format:
+                    kwargs["response_format"] = response_format
                 resp = self._client.chat.completions.create(**kwargs)
                 return resp.choices[0].message
             except Exception as err:  # 网络/限流等，指数退避后重试
