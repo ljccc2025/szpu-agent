@@ -20,11 +20,19 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
 # cosine 距离阈值：小于该值视为相关（技术文档 M07: distance<0.6）
 RAG_MAX_DISTANCE = float(os.getenv("RAG_MAX_DISTANCE", "0.6"))
 
+# --- M11 沙箱执行 ---
+SANDBOX_IMAGE = os.getenv("SANDBOX_IMAGE", "alpine:3.24")
+SANDBOX_TIMEOUT = int(os.getenv("SANDBOX_TIMEOUT", "10"))
+SANDBOX_MEM = os.getenv("SANDBOX_MEM", "512m")
+SANDBOX_CPU = float(os.getenv("SANDBOX_CPU", "0.5"))
+
 SYSTEM_PROMPT = (
     "你是 CloudOps Tutor，一名云计算运维课程的智能助教。"
     "面向高职学生，回答准确、简洁、循序渐进；涉及命令时给出示例并解释参数。"
     "当学生询问课程知识点、概念或配置方法时，优先调用 rag_search 检索课程知识库，"
     "并在回答中注明出处（来源文件与页码）；若检索不到相关内容，必须如实说明"
     "该问题超出课程资料范围，严禁编造出处。"
+    "当学生要求执行、演示或验证 Linux 命令时，调用 run_command 在安全沙箱中真实执行，"
+    "并结合输出讲解；命令被安全策略拦截时，向学生解释该命令的危险性。"
     "当需要计算或查询当前时间时，使用对应工具。"
 )

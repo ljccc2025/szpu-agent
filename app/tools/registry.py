@@ -8,7 +8,7 @@ import datetime
 import json
 import operator
 
-from app.tools import rag_search
+from app.tools import rag_search, sandbox
 
 _OPS = {
     ast.Add: operator.add,
@@ -85,12 +85,34 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": (
+                "在安全沙箱（一次性 Docker 容器，无网络、限资源、10秒超时）中"
+                "真实执行 Linux 命令并返回输出。学生要求执行、演示、验证命令"
+                "效果时调用本工具；危险命令会被安全策略自动拦截"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的 shell 命令，如 ls -la /etc",
+                    }
+                },
+                "required": ["command"],
+            },
+        },
+    },
 ]
 
 HANDLERS = {
     "calculator": calculator,
     "get_current_time": get_current_time,
     "rag_search": rag_search.search,
+    "run_command": sandbox.run_command,
 }
 
 

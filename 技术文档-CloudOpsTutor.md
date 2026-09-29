@@ -422,10 +422,10 @@ return "工具调用次数超限，请换个问法"
 | **物理文件路径** | `app/tools/sandbox.py` |
 | **核心职责** | 在一次性 Docker 容器中执行 Linux 命令，五重防线：黑名单→禁网→内存 512M→CPU 0.5核→10 秒超时 |
 | **对外API** | `run(cmd: str) -> {stdout, exit_code, blocked: bool}` |
-| **内部技术** | docker SDK, alpine:3.20 镜像, auto_remove=True, network_disabled=True |
+| **内部技术** | docker SDK, alpine:3.24 镜像, auto_remove=True, network_disabled=True |
 | **交互流程** | Agent 调用→黑名单正则预检→containers.run→捕获输出→容器自毁→返回 |
 
-**🔧 核心技术栈**: `docker`(SDK) 7.x、`alpine:3.20`
+**🔧 核心技术栈**: `docker`(SDK) 7.x、`alpine:3.24`（2026-09 最新稳定版）
 
 **🎯 推荐Skills**: `docker-build-strategies`（✅ 新装已验证）、`systematic-debugging`（本地）
 
@@ -706,7 +706,7 @@ LLM_MODEL=deepseek-chat
 DB_PATH=data/tutor.db
 CHROMA_DIR=data/chroma
 # ---- 沙箱 ----
-SANDBOX_IMAGE=alpine:3.20
+SANDBOX_IMAGE=alpine:3.24
 SANDBOX_TIMEOUT=10
 SANDBOX_MEM_LIMIT=512m
 ```
