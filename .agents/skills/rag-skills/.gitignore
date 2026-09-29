@@ -1,0 +1,23 @@
+# Local installs and dependencies
+node_modules/
+.agents/
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local scratch / working docs (already excluded from npm package)
+techs.md
+
+# Secrets - never commit (contains npm auth token)
+.npmrc
