@@ -144,7 +144,11 @@ function tab(el){
   if(el.dataset.p === "kb") loadSources();
 }
 
-function esc(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+// 同时转义引号：值可能被放进 HTML 属性，只转义 &<> 会被单引号逃逸
+function esc(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+                  .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
 function md(s){
   let h = esc(s);
   h = h.replace(/```(\w*)\n([\s\S]*?)```/g, (_,l,c)=>`<pre><code>${c}</code></pre>`);
@@ -227,7 +231,12 @@ async function loadSources(){
     box.innerHTML = data.sources.map(s=>`
       <div class="src-item">📄 <span class="nm">${esc(s.source)}</span>
         <span class="ck">${s.chunks} 个知识块</span>
-        <button class="del" onclick="delSource('${esc(s.source)}')">删除</button></div>`).join("");
+        <button class="del" data-src="${esc(s.source)}">删除</button></div>`).join("");
+    // 事件委托：绝不把数据拼进 onclick，文件名里的引号会逃逸成可执行脚本
+    box.onclick = (e) => {
+      const btn = e.target.closest(".del");
+      if(btn) delSource(btn.dataset.src);
+    };
   }catch(err){ box.innerHTML = '<div class="empty">加载失败：' + esc(err.message) + "</div>"; }
 }
 
